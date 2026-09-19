@@ -103,10 +103,10 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
     <header className="topbar">
       <Logo />
       <nav aria-label="Principal">
-        <button className={view === "documents" || view === "editor" || view === "timeline" ? "active" : ""} onClick={() => setView("documents")}>Documentos</button>
-        <button className={view === "submissions" ? "active" : ""} onClick={() => setView("submissions")}>Entregas</button>
+        <button className={view === "documents" || view === "editor" || view === "timeline" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("documents")}>Documentos</button>
+        <button className={view === "submissions" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("submissions")}>Entregas</button>
       </nav>
-      <div className="account"><span className="avatar">{user.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</span><span className="account-name">{user.name}</span><button className="icon-button" title="Cerrar sesión" onClick={onLogout}>↗</button></div>
+      <div className="account"><span className="avatar">{user.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</span><span className="account-name">{user.name}</span><button className="icon-button" title={view === "editor" ? "Vuelve primero a tus documentos" : "Cerrar sesión"} disabled={view === "editor"} onClick={onLogout}>↗</button></div>
     </header>
     {demo && <div className="demo-ribbon">Demostración local · datos temporales de esta sesión</div>}
     {children}
@@ -161,6 +161,10 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const started = useRef(Date.now());
   const sequence = useRef(0);
   const pending = useRef<WritingEvent[]>([]);
+  const syncInFlight = useRef<Promise<boolean> | null>(null);
+  const saveInFlight = useRef<Promise<boolean> | null>(null);
+  const changeRevision = useRef(0);
+  const lastSavedRevision = useRef(0);
   const editingPaste = useRef<HTMLElement | null>(null);
   const currentWordCount = words(plainText(html));
   const pasteWords = useMemo(() => { const node = globalThis.document.createElement("div"); node.innerHTML = html; return words(Array.from(node.querySelectorAll('mark[data-origin="paste"]')).map(item => item.textContent ?? "").join(" ")); }, [html]);
@@ -173,28 +177,91 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { if (pending.current.length) void syncEvents(); }, 1800);
-    return () => window.clearInterval(timer);
-  });
+    const timer = window.setInterval(() => { if (pending.current.length) void syncEvents(); }, 1200);
+    return () => { window.clearInterval(timer); void syncEvents(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!timelineOpen && editorRef.current) editorRef.current.innerHTML = html;
+    // `html` is intentionally omitted: resetting on every keystroke would move the caret.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timelineOpen]);
+
+  useEffect(() => {
+    const warnIfPending = (event: BeforeUnloadEvent) => {
+      if (changeRevision.current <= lastSavedRevision.current && !pending.current.length) return;
+      event.preventDefault(); event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnIfPending);
+    return () => window.removeEventListener("beforeunload", warnIfPending);
+  }, []);
 
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
     const event: WritingEvent = { sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.innerHTML ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
     pending.current.push(event); setEvents(previous => [...previous, event]);
   };
-  const syncEvents = async () => {
-    const batch = [...pending.current]; if (!batch.length || demo) { pending.current = []; return; }
-    try { await api(`/documents/${documentState.id}/events`, { method: "POST", body: JSON.stringify({ session_id: sessionId.current, started_at: new Date(started.current).toISOString(), events: batch }) }); pending.current.splice(0, batch.length); }
-    catch { setSaveState("error"); }
+  const syncEvents = async (): Promise<boolean> => {
+    if (demo) { pending.current = []; return true; }
+    if (syncInFlight.current) {
+      const synced = await syncInFlight.current;
+      return synced && pending.current.length ? syncEvents() : synced;
+    }
+    const batch = [...pending.current]; if (!batch.length) return true;
+    const operation = (async () => {
+      try {
+        await api(`/documents/${documentState.id}/events`, { method: "POST", body: JSON.stringify({ session_id: sessionId.current, started_at: new Date(started.current).toISOString(), events: batch }) });
+        pending.current.splice(0, batch.length); return true;
+      } catch { setSaveState("error"); return false; }
+    })();
+    syncInFlight.current = operation;
+    const synced = await operation;
+    if (syncInFlight.current === operation) syncInFlight.current = null;
+    return synced;
   };
-  const save = async () => {
-    setSaveState("saving"); const contentHtml = editorRef.current?.innerHTML ?? html;
-    const updated = { ...documentState, title, content_html: contentHtml, content_text: plainText(contentHtml), word_count: words(plainText(contentHtml)), updated_at: new Date().toISOString() };
-    try {
-      if (!demo) { const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ title, content_html: contentHtml }) }); setDocumentState({ ...updated, ...result.document }); }
-      else setDocumentState(updated);
-      record("save", null, null, contentHtml); await syncEvents(); onPersist(updated); setSaveState("saved");
-    } catch { setSaveState("error"); }
+  const save = async (): Promise<boolean> => {
+    if (saveInFlight.current) {
+      const saved = await saveInFlight.current;
+      return saved && lastSavedRevision.current < changeRevision.current ? save() : saved;
+    }
+    const revision = changeRevision.current;
+    const contentHtml = editorRef.current?.innerHTML ?? html;
+    const snapshotTitle = title;
+    setHtml(contentHtml); setSaveState("saving");
+    const operation = (async () => {
+      const updated = { ...documentState, title: snapshotTitle, content_html: contentHtml, content_text: plainText(contentHtml), word_count: words(plainText(contentHtml)), updated_at: new Date().toISOString() };
+      try {
+        let persisted = updated;
+        if (!demo) {
+          const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ title: snapshotTitle, content_html: contentHtml }) });
+          persisted = { ...updated, ...result.document };
+        }
+        setDocumentState(persisted); record("save", null, null, contentHtml);
+        if (!await syncEvents()) return false;
+        lastSavedRevision.current = Math.max(lastSavedRevision.current, revision);
+        onPersist(persisted); setSaveState(revision === changeRevision.current ? "saved" : "saving"); return true;
+      } catch { setSaveState("error"); return false; }
+    })();
+    saveInFlight.current = operation;
+    const saved = await operation;
+    if (saveInFlight.current === operation) saveInFlight.current = null;
+    return saved && lastSavedRevision.current < changeRevision.current ? save() : saved;
   };
+
+  useEffect(() => {
+    if (saveState !== "saving") return;
+    const timer = window.setTimeout(() => { void save(); }, 1100);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html, title, saveState]);
+
+  const markChanged = () => { changeRevision.current++; setSaveState("saving"); };
+  const openTimeline = async () => {
+    const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
+    if (!ready) return;
+    setTimelineIndex(Math.max(0, events.length - 1)); setTimelineOpen(true);
+  };
+  const leaveEditor = async () => { if (await save()) onBack(); };
   const onBeforeInput = () => {
     const anchor = window.getSelection()?.anchorNode;
     editingPaste.current = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest?.('mark[data-origin="paste"]') as HTMLElement | null;
@@ -204,18 +271,18 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     let eventType: WritingEvent["event_type"] = native.inputType?.startsWith("delete") ? "delete" : "insert";
     if (editingPaste.current?.isConnected) { editingPaste.current.dataset.origin = "paste-edited"; eventType = "paste_edit"; }
     editingPaste.current = null;
-    const next = target.innerHTML; setHtml(next); setSaveState("saving"); record(eventType, native.inputType, native.data, next);
+    const next = target.innerHTML; setHtml(next); markChanged(); record(eventType, native.inputType, native.data, next);
   };
   const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault(); const text = event.clipboardData.getData("text/plain"); const selection = window.getSelection();
     if (!selection?.rangeCount) return; const range = selection.getRangeAt(0); range.deleteContents();
     const mark = globalThis.document.createElement("mark"); mark.dataset.origin = "paste"; mark.textContent = text;
     const neutral = globalThis.document.createTextNode("\u200b"); range.insertNode(neutral); range.insertNode(mark); range.setStartAfter(neutral); range.collapse(true); selection.removeAllRanges(); selection.addRange(range);
-    const next = event.currentTarget.innerHTML; setHtml(next); setSaveState("saving"); record("paste", "insertFromPaste", text, next);
+    const next = event.currentTarget.innerHTML; setHtml(next); markChanged(); record("paste", "insertFromPaste", text, next);
   };
-  const format = (command: string, value?: string) => { editorRef.current?.focus(); document.execCommand(command, false, value); const next = editorRef.current?.innerHTML ?? html; setHtml(next); record("format", command, value ?? null, next); };
+  const format = (command: string, value?: string) => { editorRef.current?.focus(); document.execCommand(command, false, value); const next = editorRef.current?.innerHTML ?? html; setHtml(next); markChanged(); record("format", command, value ?? null, next); };
   const seal = async () => {
-    await save();
+    if (!await save()) return;
     try {
       let created: Certificate;
       let version: DocumentVersion;
@@ -234,25 +301,25 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   if (timelineOpen) return <Timeline events={events} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
   return <main className="editor-layout">
     <aside className="document-context">
-      <button className="back-link" onClick={onBack}>← Mis documentos</button>
+      <button className="back-link" onClick={() => void leaveEditor()}>← Mis documentos</button>
       <p className="eyebrow">Documento propio</p>
       <h1>{title || "Sin título"}</h1>
       <dl><div><dt>Estado</dt><dd>Borrador privado</dd></div><div><dt>Extensión</dt><dd>{currentWordCount} palabras</dd></div><div><dt>Versiones</dt><dd>{documentState.versions_count ?? 0} certificadas</dd></div></dl>
       <div className="privacy-note"><span>⌁</span><p><strong>Solo tú puedes verlo.</strong><br />El acceso cambia únicamente al entregar una versión.</p></div>
     </aside>
     <section className="writing-surface">
-      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { setTitle(event.target.value); setSaveState("saving"); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div><span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Cambios pendientes" : "Error al guardar"}</span></div>
+      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { setTitle(event.target.value); markChanged(); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div><span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span></div>
       <div className="paper">
         <div className="toolbar" role="toolbar" aria-label="Formato"><button onClick={() => format("bold")}><strong>B</strong></button><button onClick={() => format("italic")}><em>I</em></button><button onClick={() => format("underline")}><u>U</u></button><span></span><button onClick={() => format("formatBlock", "h2")}>T</button><button onClick={() => format("insertUnorderedList")}>☷</button><button onClick={() => format("formatBlock", "blockquote")}>❞</button><small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small></div>
         <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning data-placeholder="Empieza a escribir…" onBeforeInput={onBeforeInput} onInput={onInput} onPaste={onPaste} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
       </div>
-      <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar</button><button className="secondary" onClick={() => setTimelineOpen(true)}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
+      <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar ahora</button><button className="secondary" onClick={() => void openTimeline()}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
     </section>
     <aside className="evidence-panel">
       <div className="live-title"><span><i></i>Registro en directo</span><small>{events.length} eventos</small></div>
       <div className="metric-hero"><span>Ritmo reciente</span><strong>{Math.max(0, Math.round((currentWordCount / Math.max(1, Date.now() - started.current)) * 60_000))}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
       <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{Math.max(0, currentWordCount - pasteWords - editedPasteWords)} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Proceso registrado<strong>{duration(replayEvent?.elapsed_ms ?? 0)}</strong></p></li></ul>
-      <button className="process-card" onClick={() => setTimelineOpen(true)}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
+      <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}
     </aside>
     {showSeal && <Modal title="Sellar esta versión" onClose={() => setShowSeal(false)}><p>Se creará una copia inmutable del texto y de la cadena de eventos recibida por Veritas. Podrás seguir trabajando y sellar versiones posteriores.</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>palabras</span><strong>{events.length}</strong><span>eventos</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>Cancelar</button><button className="primary" onClick={() => void seal()}>Certificar versión</button></div></Modal>}
@@ -296,12 +363,13 @@ export default function App() {
   const create = async (title: string) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
   const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
   const persist = (updated: VeritasDocument) => { setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
+  const returnToDocuments = () => { setView("documents"); if (!demo) void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => undefined); };
   const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setView("documents"); };
   if (booting) return <main className="loading"><Logo /><span></span><p>Abriendo tu archivo…</p></main>;
   if (!user) return <AuthScreen onAuthenticated={next => { setUser(next); void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
     {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={title => void create(title)} />}
-    {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} onBack={() => setView("documents")} onPersist={persist} />}
+    {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} onBack={returnToDocuments} onPersist={persist} />}
     {view === "submissions" && <SubmissionsView submissions={submissions} />}
   </Shell>;
 }
