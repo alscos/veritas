@@ -37,6 +37,7 @@ export type VeritasDocument = {
 
 export type WritingEvent = {
   id?: number;
+  writing_session_id?: string;
   sequence: number;
   event_type: "start" | "insert" | "delete" | "paste" | "paste_edit" | "format" | "focus" | "blur" | "save";
   input_type?: string | null;

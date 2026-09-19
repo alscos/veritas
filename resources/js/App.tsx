@@ -37,7 +37,58 @@ const demoEvents: WritingEvent[] = [
 ];
 
 const words = (text: string) => text.trim() ? (text.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'’_-]*/gu) ?? []).length : 0;
-const plainText = (html: string) => { const node = document.createElement("div"); node.innerHTML = html; return (node.textContent ?? "").replace(/\u200b/g, "").replace(/\s+/g, " ").trim(); };
+type Provenance = "direct" | "paste" | "paste-edited";
+const blockTags = new Set(["DIV", "P", "H2", "H3", "LI", "BLOCKQUOTE", "UL", "OL"]);
+const analyzeHtml = (html: string) => {
+  const root = document.createElement("div"); root.innerHTML = html;
+  let source = ""; const provenance: Provenance[] = [];
+  const append = (text: string, origin: Provenance) => { source += text; for (let index = 0; index < text.length; index++) provenance.push(origin); };
+  const visit = (node: Node, inherited: Provenance) => {
+    if (node.nodeType === Node.TEXT_NODE) { append(node.textContent ?? "", inherited); return; }
+    if (!(node instanceof HTMLElement)) return;
+    let origin = inherited;
+    if (node.tagName === "MARK" && node.dataset.origin === "paste") origin = "paste";
+    if (node.tagName === "MARK" && node.dataset.origin === "paste-edited") origin = "paste-edited";
+    if (node.tagName === "BR") { append("\n", origin); return; }
+    Array.from(node.childNodes).forEach(child => visit(child, origin));
+    if (blockTags.has(node.tagName)) append("\n", origin);
+  };
+  Array.from(root.childNodes).forEach(child => visit(child, "direct"));
+  const counts = { direct: 0, pasted: 0, edited: 0, total: 0 };
+  for (const match of source.matchAll(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'’_-]*/gu)) {
+    const start = match.index ?? 0; const end = start + match[0].length;
+    const origins = new Set(provenance.slice(start, end)); counts.total++;
+    if (origins.has("paste-edited")) counts.edited++;
+    else if (origins.has("paste")) counts.pasted++;
+    else counts.direct++;
+  }
+  return { ...counts, text: source.replace(/\u200b/g, "").replace(/\s+/gu, " ").trim() };
+};
+const plainText = (html: string) => analyzeHtml(html).text;
+
+const ppmForSession = (events: WritingEvent[]): number | null => {
+  if (!events.length) return null;
+  const startDirect = analyzeHtml(events[0].after_html ?? "").direct;
+  const finalDirect = analyzeHtml(events.at(-1)?.after_html ?? "").direct;
+  const writtenWords = Math.max(0, finalDirect - startDirect);
+  const firstWriting = events.find(event => event.event_type === "insert" && event.input_type !== "insertFromPaste" && analyzeHtml(event.after_html ?? "").direct > startDirect);
+  const elapsed = firstWriting ? (events.at(-1)?.elapsed_ms ?? 0) - firstWriting.elapsed_ms : 0;
+  return writtenWords >= 3 && elapsed >= 5_000 ? Math.round((writtenWords / elapsed) * 60_000) : null;
+};
+
+const lastRecordedPpm = (events: WritingEvent[]): number | null => {
+  const sessions: WritingEvent[][] = [];
+  for (const event of events) {
+    const previous = sessions.at(-1)?.at(-1);
+    const newSession = !previous || (event.writing_session_id && previous.writing_session_id && event.writing_session_id !== previous.writing_session_id) || event.sequence <= previous.sequence;
+    if (newSession) sessions.push([]);
+    sessions.at(-1)!.push(event);
+  }
+  for (let index = sessions.length - 1; index >= 0; index--) {
+    const ppm = ppmForSession(sessions[index]); if (ppm !== null) return ppm;
+  }
+  return null;
+};
 const makeId = () => {
   if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
   const bytes = new Uint8Array(16);
@@ -186,14 +237,17 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const saveInFlight = useRef<Promise<boolean> | null>(null);
   const changeRevision = useRef(0);
   const lastSavedRevision = useRef(0);
-  const editingPaste = useRef<HTMLElement | null>(null);
-  const currentWordCount = words(plainText(html));
-  const pasteWords = useMemo(() => { const node = globalThis.document.createElement("div"); node.innerHTML = html; return words(Array.from(node.querySelectorAll('mark[data-origin="paste"]')).map(item => item.textContent ?? "").join(" ")); }, [html]);
-  const editedPasteWords = useMemo(() => { const node = globalThis.document.createElement("div"); node.innerHTML = html; return words(Array.from(node.querySelectorAll('mark[data-origin="paste-edited"]')).map(item => item.textContent ?? "").join(" ")); }, [html]);
-  const initialDirectWords = useRef(currentWordCount - pasteWords - editedPasteWords);
-  const sessionDirectWords = Math.max(0, currentWordCount - pasteWords - editedPasteWords - initialDirectWords.current);
+  const editingProvenance = useRef(false);
+  const analysis = useMemo(() => analyzeHtml(html), [html]);
+  const currentWordCount = analysis.total;
+  const pasteWords = analysis.pasted;
+  const editedPasteWords = analysis.edited;
+  const initialDirectWords = useRef(analysis.direct);
+  const sessionDirectWords = Math.max(0, analysis.direct - initialDirectWords.current);
   const typingElapsedMs = firstTypingAt === null ? 0 : metricNow - firstTypingAt;
   const sessionPpm = sessionDirectWords >= 3 && typingElapsedMs >= 5_000 ? Math.round((sessionDirectWords / typingElapsedMs) * 60_000) : null;
+  const previousPpm = useMemo(() => lastRecordedPpm(initialEvents), [initialEvents]);
+  const displayedPpm = sessionPpm ?? previousPpm;
 
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = initialHtml;
@@ -293,16 +347,34 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     setTimelineIndex(Math.max(0, events.length - 1)); setTimelineOpen(true);
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
-  const onBeforeInput = () => {
-    const anchor = window.getSelection()?.anchorNode;
-    editingPaste.current = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest?.('mark[data-origin="paste"]') as HTMLElement | null;
+  const onBeforeInput = (event: React.FormEvent<HTMLDivElement>) => {
+    const native = event.nativeEvent as InputEvent; const selection = window.getSelection();
+    const anchor = selection?.anchorNode; const element = anchor instanceof Element ? anchor : anchor?.parentElement;
+    const originMark = element?.closest?.('mark[data-origin]') as HTMLElement | null;
+    editingProvenance.current = Boolean(originMark);
+    if (!selection?.rangeCount || originMark?.dataset.origin !== "paste" || !native.inputType?.startsWith("insert")) return;
+    const inserted = native.data ?? (native.inputType === "insertParagraph" || native.inputType === "insertLineBreak" ? "\n" : null);
+    if (inserted === null) return;
+    const range = selection.getRangeAt(0);
+    if (!originMark.contains(range.startContainer) || !originMark.contains(range.endContainer)) return;
+    event.preventDefault();
+    const offsetWithin = (container: Node, offset: number) => { const probe = document.createRange(); probe.selectNodeContents(originMark); probe.setEnd(container, offset); return probe.toString().length; };
+    const original = originMark.textContent ?? ""; const start = offsetWithin(range.startContainer, range.startOffset); const end = offsetWithin(range.endContainer, range.endOffset);
+    const fragment = document.createDocumentFragment();
+    const provenanceMark = (text: string, origin: "paste" | "paste-edited") => { const mark = document.createElement("mark"); mark.dataset.origin = origin; mark.textContent = text; return mark; };
+    if (start > 0) fragment.append(provenanceMark(original.slice(0, start), "paste"));
+    const edited = provenanceMark(inserted, "paste-edited"); fragment.append(edited);
+    if (end < original.length) fragment.append(provenanceMark(original.slice(end), "paste"));
+    originMark.replaceWith(fragment);
+    const caret = document.createRange(); caret.selectNodeContents(edited); caret.collapse(false); selection.removeAllRanges(); selection.addRange(caret);
+    const next = event.currentTarget.innerHTML; setHtml(next); markChanged(); record("paste_edit", native.inputType, inserted, next); editingProvenance.current = false;
   };
   const onInput = (event: React.FormEvent<HTMLDivElement>) => {
     const target = event.currentTarget; const native = event.nativeEvent as InputEvent;
-    if (native.inputType?.startsWith("insert") && native.inputType !== "insertFromPaste" && native.data) setFirstTypingAt(previous => previous ?? Date.now());
     let eventType: WritingEvent["event_type"] = native.inputType?.startsWith("delete") ? "delete" : "insert";
-    if (editingPaste.current?.isConnected) { editingPaste.current.dataset.origin = "paste-edited"; eventType = "paste_edit"; }
-    editingPaste.current = null;
+    if (editingProvenance.current) eventType = "paste_edit";
+    if (eventType === "insert" && native.inputType !== "insertFromPaste" && native.data) setFirstTypingAt(previous => previous ?? Date.now());
+    editingProvenance.current = false;
     const next = target.innerHTML; setHtml(next); markChanged(); record(eventType, native.inputType, native.data, next);
   };
   const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -349,8 +421,8 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     </section>
     <aside className="evidence-panel">
       <div className="live-title"><span><i></i>Registro en directo</span><small>{events.length} eventos</small></div>
-      <div className="metric-hero"><span>Ritmo de esta sesión</span><strong>{sessionPpm ?? "—"}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
-      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{Math.max(0, currentWordCount - pasteWords - editedPasteWords)} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Proceso registrado<strong>{duration(replayEvent?.elapsed_ms ?? 0)}</strong></p></li></ul>
+      <div className="metric-hero"><span>{sessionPpm !== null ? "Ritmo de esta sesión" : previousPpm !== null ? "Último ritmo registrado" : "Ritmo de esta sesión"}</span><strong>{displayedPpm ?? "—"}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
+      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{analysis.direct} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Proceso registrado<strong>{duration(replayEvent?.elapsed_ms ?? 0)}</strong></p></li></ul>
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}
     </aside>

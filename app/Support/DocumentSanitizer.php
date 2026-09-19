@@ -8,7 +8,7 @@ use DOMNode;
 
 final class DocumentSanitizer
 {
-    private const TAGS = ['P', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'MARK', 'SPAN'];
+    private const TAGS = ['P', 'DIV', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'MARK', 'SPAN'];
 
     public static function html(string $input): string
     {
