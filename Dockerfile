@@ -26,9 +26,15 @@ RUN apt-get update \
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 WORKDIR /var/www/html
 COPY --from=php-dependencies /app/vendor ./vendor
-COPY --from=frontend /app/public/build ./public/build
 COPY app ./app
-COPY artisan bootstrap config database public resources/views routes ./
+COPY artisan ./artisan
+COPY bootstrap ./bootstrap
+COPY config ./config
+COPY database ./database
+COPY public ./public
+COPY resources/views ./resources/views
+COPY routes ./routes
+COPY --from=frontend /app/public/build ./public/build
 COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/entrypoint.sh /usr/local/bin/veritas-entrypoint
 RUN chmod +x artisan /usr/local/bin/veritas-entrypoint \
