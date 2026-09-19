@@ -1,0 +1,13 @@
+/.env
+/vendor/
+/node_modules/
+/public/build/
+/storage/*.key
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/.idea/
+/.vscode/
+.DS_Store
+npm-debug.log*
