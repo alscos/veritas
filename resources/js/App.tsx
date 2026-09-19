@@ -164,16 +164,19 @@ function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: V
 }
 
 function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
+  const initialHtml = typeof initial.content_html === "string" ? initial.content_html : "";
   const [documentState, setDocumentState] = useState(initial);
   const [events, setEvents] = useState<WritingEvent[]>(initialEvents);
   const [title, setTitle] = useState(initial.title);
-  const [html, setHtml] = useState(initial.content_html);
+  const [html, setHtml] = useState(initialHtml);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
   const [showSend, setShowSend] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineIndex, setTimelineIndex] = useState(Math.max(0, initialEvents.length - 1));
+  const [firstTypingAt, setFirstTypingAt] = useState<number | null>(null);
+  const [metricNow, setMetricNow] = useState(Date.now());
   const editorRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(makeId());
   const started = useRef(Date.now());
@@ -187,10 +190,14 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const currentWordCount = words(plainText(html));
   const pasteWords = useMemo(() => { const node = globalThis.document.createElement("div"); node.innerHTML = html; return words(Array.from(node.querySelectorAll('mark[data-origin="paste"]')).map(item => item.textContent ?? "").join(" ")); }, [html]);
   const editedPasteWords = useMemo(() => { const node = globalThis.document.createElement("div"); node.innerHTML = html; return words(Array.from(node.querySelectorAll('mark[data-origin="paste-edited"]')).map(item => item.textContent ?? "").join(" ")); }, [html]);
+  const initialDirectWords = useRef(currentWordCount - pasteWords - editedPasteWords);
+  const sessionDirectWords = Math.max(0, currentWordCount - pasteWords - editedPasteWords - initialDirectWords.current);
+  const typingElapsedMs = firstTypingAt === null ? 0 : metricNow - firstTypingAt;
+  const sessionPpm = sessionDirectWords >= 3 && typingElapsedMs >= 5_000 ? Math.round((sessionDirectWords / typingElapsedMs) * 60_000) : null;
 
   useEffect(() => {
-    if (editorRef.current) editorRef.current.innerHTML = initial.content_html;
-    record("start", null, null, initial.content_html);
+    if (editorRef.current) editorRef.current.innerHTML = initialHtml;
+    record("start", null, null, initialHtml);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -199,6 +206,12 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     return () => { window.clearInterval(timer); void syncEvents(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (firstTypingAt === null) return;
+    const timer = window.setInterval(() => setMetricNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [firstTypingAt]);
 
   useEffect(() => {
     if (!timelineOpen && editorRef.current) editorRef.current.innerHTML = html;
@@ -286,6 +299,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   };
   const onInput = (event: React.FormEvent<HTMLDivElement>) => {
     const target = event.currentTarget; const native = event.nativeEvent as InputEvent;
+    if (native.inputType?.startsWith("insert") && native.inputType !== "insertFromPaste" && native.data) setFirstTypingAt(previous => previous ?? Date.now());
     let eventType: WritingEvent["event_type"] = native.inputType?.startsWith("delete") ? "delete" : "insert";
     if (editingPaste.current?.isConnected) { editingPaste.current.dataset.origin = "paste-edited"; eventType = "paste_edit"; }
     editingPaste.current = null;
@@ -335,7 +349,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     </section>
     <aside className="evidence-panel">
       <div className="live-title"><span><i></i>Registro en directo</span><small>{events.length} eventos</small></div>
-      <div className="metric-hero"><span>Ritmo reciente</span><strong>{Math.max(0, Math.round((currentWordCount / Math.max(1, Date.now() - started.current)) * 60_000))}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
+      <div className="metric-hero"><span>Ritmo de esta sesión</span><strong>{sessionPpm ?? "—"}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
       <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{Math.max(0, currentWordCount - pasteWords - editedPasteWords)} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Proceso registrado<strong>{duration(replayEvent?.elapsed_ms ?? 0)}</strong></p></li></ul>
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}

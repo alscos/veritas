@@ -27,6 +27,10 @@ class DocumentController
             'owner_id' => $request->user()->id,
             'title' => trim($data['title'] ?? '') ?: 'Documento sin título',
         ]);
+        // Reload database defaults such as content_html before serializing the
+        // new document. Otherwise an empty document reaches the client without
+        // those attributes and `undefined` can become literal editor content.
+        $document->refresh();
         return response()->json(['document' => $document->loadCount(['versions', 'sessions'])], 201);
     }
 
