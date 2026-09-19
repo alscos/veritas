@@ -113,10 +113,20 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
   </div>;
 }
 
-function DocumentsView({ documents, onOpen, onCreate }: { documents: VeritasDocument[]; onOpen: (document: VeritasDocument) => void; onCreate: (title: string) => void }) {
+function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: VeritasDocument[]; onOpen: (document: VeritasDocument) => void; onCreate: (title: string) => void; onDelete: (document: VeritasDocument) => Promise<void> }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [deleting, setDeleting] = useState<VeritasDocument | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const submit = (event: FormEvent) => { event.preventDefault(); onCreate(title.trim() || "Documento sin título"); setTitle(""); setCreating(false); };
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true); setDeleteError("");
+    try { await onDelete(deleting); setDeleting(null); }
+    catch (reason) { setDeleteError(reason instanceof ApiError ? reason.message : "No se pudo eliminar el documento."); }
+    finally { setDeleteBusy(false); }
+  };
   const totalWords = documents.reduce((sum, document) => sum + document.word_count, 0);
   const sealed = documents.reduce((sum, document) => sum + (document.versions_count ?? 0), 0);
   return <main className="workspace dashboard">
@@ -135,13 +145,21 @@ function DocumentsView({ documents, onOpen, onCreate }: { documents: VeritasDocu
       <button className="primary">Crear y escribir</button><button type="button" className="secondary" onClick={() => setCreating(false)}>Cancelar</button>
     </form>}
     <section className="document-list">
-      <div className="list-heading"><span>Documento</span><span>Proceso</span><span>Último cambio</span><span></span></div>
-      {documents.map(document => <button className="document-row" key={document.id} onClick={() => onOpen(document)}>
-        <span className="doc-main"><span className="doc-icon">{(document.versions_count ?? 0) > 0 ? "V" : "·"}</span><span><strong>{document.title}</strong><small>{document.word_count} palabras · {document.status === "draft" ? "Borrador activo" : "Archivado"}</small></span></span>
-        <span className="process-cell"><span className={(document.versions_count ?? 0) > 0 ? "status sealed" : "status draft"}>{(document.versions_count ?? 0) > 0 ? `${document.versions_count} sellada${document.versions_count === 1 ? "" : "s"}` : "Sin sellar"}</span><small>{document.sessions_count ?? 0} sesiones</small></span>
-        <span className="date-cell">{shortDate(document.updated_at)}</span><span className="row-arrow">→</span>
-      </button>)}
+      <div className="list-heading"><span>Documento</span><span>Proceso</span><span>Último cambio</span><span></span><span></span></div>
+      {documents.map(document => <div className="document-row" key={document.id}>
+        <button className="document-open" onClick={() => onOpen(document)}>
+          <span className="doc-main"><span className="doc-icon">{(document.versions_count ?? 0) > 0 ? "V" : "·"}</span><span><strong>{document.title}</strong><small>{document.word_count} palabras · {document.status === "draft" ? "Borrador activo" : "Archivado"}</small></span></span>
+          <span className="process-cell"><span className={(document.versions_count ?? 0) > 0 ? "status sealed" : "status draft"}>{(document.versions_count ?? 0) > 0 ? `${document.versions_count} sellada${document.versions_count === 1 ? "" : "s"}` : "Sin sellar"}</span><small>{document.sessions_count ?? 0} sesiones</small></span>
+          <span className="date-cell">{shortDate(document.updated_at)}</span><span className="row-arrow">→</span>
+        </button>
+        <button className="document-delete" title={`Eliminar ${document.title}`} aria-label={`Eliminar ${document.title}`} onClick={() => { setDeleting(document); setDeleteError(""); }}>×</button>
+      </div>)}
     </section>
+    {deleting && <Modal title="Eliminar documento" onClose={() => { if (!deleteBusy) setDeleting(null); }}>
+      <p>Vas a eliminar <strong>«{deleting.title}»</strong> y todo su historial de escritura{(deleting.versions_count ?? 0) > 0 ? ", incluidas sus versiones certificadas" : ""}. Esta acción no se puede deshacer.</p>
+      {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
+      <div className="modal-actions"><button className="secondary" disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancelar</button><button className="danger" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "Eliminando…" : "Eliminar definitivamente"}</button></div>
+    </Modal>}
   </main>;
 }
 
@@ -361,6 +379,7 @@ export default function App() {
   const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [submissions] = useState<Submission[]>([]); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
   useEffect(() => { void (async () => { try { let current = user; if (!current) { const result = await api<{ user: User }>('/me'); current = result.user; setUser(current); } if (current) { const result = await api<{ documents: VeritasDocument[] }>('/documents'); setDocuments(result.documents); } } catch (reason) { if (import.meta.env.DEV && (!(reason instanceof ApiError) || reason.status !== 401)) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   const create = async (title: string) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
+  const remove = async (document: VeritasDocument) => { if (!demo) await api<{ deleted: boolean }>(`/documents/${document.id}`, { method: 'DELETE' }); setDocuments(previous => previous.filter(item => item.id !== document.id)); setEventsByDocument(previous => { const next = { ...previous }; delete next[document.id]; return next; }); if (active?.id === document.id) setActive(null); };
   const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
   const persist = (updated: VeritasDocument) => { setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
   const returnToDocuments = () => { setView("documents"); if (!demo) void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => undefined); };
@@ -368,7 +387,7 @@ export default function App() {
   if (booting) return <main className="loading"><Logo /><span></span><p>Abriendo tu archivo…</p></main>;
   if (!user) return <AuthScreen onAuthenticated={next => { setUser(next); void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
-    {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={title => void create(title)} />}
+    {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={title => void create(title)} onDelete={remove} />}
     {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} onBack={returnToDocuments} onPersist={persist} />}
     {view === "submissions" && <SubmissionsView submissions={submissions} />}
   </Shell>;

@@ -19,6 +19,7 @@ Route::prefix('api')->middleware('throttle:60,1')->group(function (): void {
         Route::post('/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
         Route::patch('/documents/{document}', [DocumentController::class, 'update']);
+        Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
         Route::post('/documents/{document}/events', [EventController::class, 'store']);
         Route::get('/documents/{document}/timeline', [EventController::class, 'timeline']);
         Route::post('/documents/{document}/seal', [SealController::class, 'store']);

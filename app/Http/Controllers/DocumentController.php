@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Support\DocumentSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DocumentController
 {
@@ -51,5 +52,21 @@ class DocumentController
         }
         $document->save();
         return response()->json(['document' => $document]);
+    }
+
+    public function destroy(Request $request, Document $document): JsonResponse
+    {
+        abort_unless($document->owner_id === $request->user()->id, 404);
+
+        $hasSubmissions = DB::table('submissions')
+            ->join('document_versions', 'document_versions.id', '=', 'submissions.document_version_id')
+            ->where('document_versions.document_id', $document->id)
+            ->exists();
+
+        abort_if($hasSubmissions, 409, 'No se puede eliminar un documento que ya ha sido entregado.');
+
+        $document->delete();
+
+        return response()->json(['deleted' => true]);
     }
 }

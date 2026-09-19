@@ -15,7 +15,9 @@ final class DocumentSanitizer
         if ($input === '') return '';
         $document = new DOMDocument('1.0', 'UTF-8');
         $previous = libxml_use_internal_errors(true);
-        $document->loadHTML('<div id="veritas-root">'.$input.'</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        // DOMDocument otherwise interprets an HTML fragment as ISO-8859-1 and
+        // corrupts valid UTF-8 text (for example, "á" becomes "Ã¡").
+        $document->loadHTML('<?xml encoding="UTF-8"><div id="veritas-root">'.$input.'</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         $root = $document->getElementById('veritas-root');
