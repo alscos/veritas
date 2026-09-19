@@ -238,6 +238,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const changeRevision = useRef(0);
   const lastSavedRevision = useRef(0);
   const editingProvenance = useRef(false);
+  const pendingPasteEdit = useRef<{ mark: HTMLElement; original: string; start: number; end: number } | null>(null);
   const analysis = useMemo(() => analyzeHtml(html), [html]);
   const currentWordCount = analysis.total;
   const pasteWords = analysis.pasted;
@@ -348,33 +349,35 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
   const onBeforeInput = (event: React.FormEvent<HTMLDivElement>) => {
-    const native = event.nativeEvent as InputEvent; const selection = window.getSelection();
+    const selection = window.getSelection();
     const anchor = selection?.anchorNode; const element = anchor instanceof Element ? anchor : anchor?.parentElement;
     const originMark = element?.closest?.('mark[data-origin]') as HTMLElement | null;
     editingProvenance.current = Boolean(originMark);
-    if (!selection?.rangeCount || originMark?.dataset.origin !== "paste" || !native.inputType?.startsWith("insert")) return;
-    const inserted = native.data ?? (native.inputType === "insertParagraph" || native.inputType === "insertLineBreak" ? "\n" : null);
-    if (inserted === null) return;
+    pendingPasteEdit.current = null;
+    if (!selection?.rangeCount || originMark?.dataset.origin !== "paste") return;
     const range = selection.getRangeAt(0);
     if (!originMark.contains(range.startContainer) || !originMark.contains(range.endContainer)) return;
-    event.preventDefault();
     const offsetWithin = (container: Node, offset: number) => { const probe = document.createRange(); probe.selectNodeContents(originMark); probe.setEnd(container, offset); return probe.toString().length; };
-    const original = originMark.textContent ?? ""; const start = offsetWithin(range.startContainer, range.startOffset); const end = offsetWithin(range.endContainer, range.endOffset);
-    const fragment = document.createDocumentFragment();
-    const provenanceMark = (text: string, origin: "paste" | "paste-edited") => { const mark = document.createElement("mark"); mark.dataset.origin = origin; mark.textContent = text; return mark; };
-    if (start > 0) fragment.append(provenanceMark(original.slice(0, start), "paste"));
-    const edited = provenanceMark(inserted, "paste-edited"); fragment.append(edited);
-    if (end < original.length) fragment.append(provenanceMark(original.slice(end), "paste"));
-    originMark.replaceWith(fragment);
-    const caret = document.createRange(); caret.selectNodeContents(edited); caret.collapse(false); selection.removeAllRanges(); selection.addRange(caret);
-    const next = event.currentTarget.innerHTML; setHtml(next); markChanged(); record("paste_edit", native.inputType, inserted, next); editingProvenance.current = false;
+    pendingPasteEdit.current = { mark: originMark, original: originMark.textContent ?? "", start: offsetWithin(range.startContainer, range.startOffset), end: offsetWithin(range.endContainer, range.endOffset) };
   };
   const onInput = (event: React.FormEvent<HTMLDivElement>) => {
     const target = event.currentTarget; const native = event.nativeEvent as InputEvent;
+    const pendingEdit = pendingPasteEdit.current;
+    const isInsertion = native.inputType?.startsWith("insert") || native.data !== null;
+    const inserted = native.data ?? (native.inputType === "insertParagraph" || native.inputType === "insertLineBreak" ? "\n" : null);
+    if (pendingEdit && isInsertion && inserted !== null && pendingEdit.mark.isConnected) {
+      const fragment = document.createDocumentFragment();
+      const provenanceMark = (text: string, origin: "paste" | "paste-edited") => { const mark = document.createElement("mark"); mark.dataset.origin = origin; mark.textContent = text; return mark; };
+      if (pendingEdit.start > 0) fragment.append(provenanceMark(pendingEdit.original.slice(0, pendingEdit.start), "paste"));
+      const edited = provenanceMark(inserted, "paste-edited"); fragment.append(edited);
+      if (pendingEdit.end < pendingEdit.original.length) fragment.append(provenanceMark(pendingEdit.original.slice(pendingEdit.end), "paste"));
+      pendingEdit.mark.replaceWith(fragment);
+      const selection = window.getSelection(); const caret = document.createRange(); caret.selectNodeContents(edited); caret.collapse(false); selection?.removeAllRanges(); selection?.addRange(caret);
+    }
     let eventType: WritingEvent["event_type"] = native.inputType?.startsWith("delete") ? "delete" : "insert";
     if (editingProvenance.current) eventType = "paste_edit";
     if (eventType === "insert" && native.inputType !== "insertFromPaste" && native.data) setFirstTypingAt(previous => previous ?? Date.now());
-    editingProvenance.current = false;
+    editingProvenance.current = false; pendingPasteEdit.current = null;
     const next = target.innerHTML; setHtml(next); markChanged(); record(eventType, native.inputType, native.data, next);
   };
   const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
