@@ -39,12 +39,12 @@ class DocumentController
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
         $data = $request->validate([
-            'title' => ['sometimes', 'string', 'max:180'],
-            'content_html' => ['sometimes', 'string', 'max:'.config('veritas.max_document_bytes')],
+            'title' => ['sometimes', 'nullable', 'string', 'max:180'],
+            'content_html' => ['sometimes', 'nullable', 'string', 'max:'.config('veritas.max_document_bytes')],
         ]);
-        if (array_key_exists('title', $data)) $document->title = trim($data['title']) ?: 'Documento sin título';
+        if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: 'Documento sin título';
         if (array_key_exists('content_html', $data)) {
-            $document->content_html = DocumentSanitizer::html($data['content_html']);
+            $document->content_html = DocumentSanitizer::html((string) ($data['content_html'] ?? ''));
             $document->content_text = DocumentSanitizer::text($document->content_html);
             $document->word_count = DocumentSanitizer::wordCount($document->content_text);
             $document->last_session_at = now();

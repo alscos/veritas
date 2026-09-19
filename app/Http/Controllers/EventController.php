@@ -25,7 +25,7 @@ class EventController
             'events.*.event_type' => ['required', 'string'],
             'events.*.input_type' => ['nullable', 'string', 'max:64'],
             'events.*.data' => ['nullable', 'string', 'max:'.config('veritas.max_event_data_bytes')],
-            'events.*.after_html' => ['required', 'string', 'max:'.config('veritas.max_document_bytes')],
+            'events.*.after_html' => ['present', 'nullable', 'string', 'max:'.config('veritas.max_document_bytes')],
             'events.*.elapsed_ms' => ['required', 'integer', 'min:0'],
             'events.*.created_at' => ['nullable', 'date'],
         ]);
@@ -49,7 +49,7 @@ class EventController
                 if (!in_array($event['event_type'], self::TYPES, true)) abort(422, 'Tipo de evento no válido.');
                 if ($event['sequence'] <= $lastSequence) continue;
                 if ($event['sequence'] !== $lastSequence + 1) abort(409, 'La secuencia de eventos está incompleta.');
-                $afterHtml = DocumentSanitizer::html($event['after_html']);
+                $afterHtml = DocumentSanitizer::html((string) ($event['after_html'] ?? ''));
                 $canonical = json_encode([
                     'session' => $session->id,
                     'sequence' => $event['sequence'],
