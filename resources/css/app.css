@@ -148,6 +148,8 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .metric-icon.pasted { color: #bd4c2e; background: var(--coral-soft); }
 .metric-icon.revised { color: var(--blue); background: var(--blue-soft); }
 .metric-icon.history { color: var(--gold); background: var(--gold-soft); }
+.metric-icon.pause { color: #8d681f; background: var(--gold-soft); }
+.metric-icon.away { color: var(--muted); background: #e9e9e5; }
 .evidence-list p { margin: 0; font-size: .74rem; }
 .evidence-list strong { display: block; color: var(--muted); font-size: .68rem; font-weight: 500; margin-top: 4px; }
 .process-card { width: 100%; border: 0; border-radius: 12px; background: var(--green); color: #fff; padding: 16px; display: flex; gap: 12px; text-align: left; cursor: pointer; }

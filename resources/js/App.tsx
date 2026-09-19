@@ -76,7 +76,7 @@ const ppmForSession = (events: WritingEvent[]): number | null => {
   return writtenWords >= 3 && elapsed >= 5_000 ? Math.round((writtenWords / elapsed) * 60_000) : null;
 };
 
-const lastRecordedPpm = (events: WritingEvent[]): number | null => {
+const groupSessions = (events: WritingEvent[]): WritingEvent[][] => {
   const sessions: WritingEvent[][] = [];
   for (const event of events) {
     const previous = sessions.at(-1)?.at(-1);
@@ -84,10 +84,46 @@ const lastRecordedPpm = (events: WritingEvent[]): number | null => {
     if (newSession) sessions.push([]);
     sessions.at(-1)!.push(event);
   }
+  return sessions;
+};
+
+const lastRecordedPpm = (events: WritingEvent[]): number | null => {
+  const sessions = groupSessions(events);
   for (let index = sessions.length - 1; index >= 0; index--) {
     const ppm = ppmForSession(sessions[index]); if (ppm !== null) return ppm;
   }
   return null;
+};
+
+const PAUSE_THRESHOLD_MS = 5_000;
+const timingAnalysis = (events: WritingEvent[]) => {
+  const result = { totalMs: 0, writingMs: 0, revisionMs: 0, pauseMs: 0, pauseCount: 0, awayMs: 0 };
+  const contentTypes = new Set<WritingEvent["event_type"]>(["insert", "delete", "paste", "paste_edit", "format"]);
+  for (const session of groupSessions(events)) {
+    if (!session.length) continue;
+    const sessionEnd = Math.max(...session.map(event => event.elapsed_ms)); result.totalMs += sessionEnd;
+    const away: Array<[number, number]> = []; let awayStart: number | null = null;
+    for (const event of session) {
+      if (event.event_type === "blur" && awayStart === null) awayStart = event.elapsed_ms;
+      if (event.event_type === "focus" && awayStart !== null) { away.push([awayStart, event.elapsed_ms]); awayStart = null; }
+    }
+    if (awayStart !== null) away.push([awayStart, sessionEnd]);
+    result.awayMs += away.reduce((sum, [start, end]) => sum + Math.max(0, end - start), 0);
+    const focusedDuration = (start: number, end: number) => Math.max(0, end - start - away.reduce((sum, [awayFrom, awayTo]) => sum + Math.max(0, Math.min(end, awayTo) - Math.max(start, awayFrom)), 0));
+    const contentEvents = session.filter(event => contentTypes.has(event.event_type));
+    if (!contentEvents.length) continue;
+    let previous = session[0].elapsed_ms;
+    for (const event of contentEvents) {
+      const gap = focusedDuration(previous, event.elapsed_ms);
+      if (gap >= PAUSE_THRESHOLD_MS) { result.pauseCount++; result.pauseMs += gap; }
+      else if (event.event_type === "insert") result.writingMs += gap;
+      else result.revisionMs += gap;
+      previous = event.elapsed_ms;
+    }
+    const tail = focusedDuration(previous, sessionEnd);
+    if (tail >= PAUSE_THRESHOLD_MS) { result.pauseCount++; result.pauseMs += tail; }
+  }
+  return result;
 };
 const makeId = () => {
   if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
@@ -99,7 +135,7 @@ const makeId = () => {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 };
 const shortDate = (value: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-const duration = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1_000) % 60).padStart(2, "0")}`;
+const duration = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1_000)); const hours = Math.floor(seconds / 3_600); const minutes = Math.floor(seconds / 60) % 60; const rest = seconds % 60; return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${minutes}:${String(rest).padStart(2, "0")}`; };
 
 function Logo() {
   return <div className="brand"><span className="brand-mark" aria-hidden="true">V</span><span>Veritas</span></div>;
@@ -249,6 +285,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const sessionPpm = sessionDirectWords >= 3 && typingElapsedMs >= 5_000 ? Math.round((sessionDirectWords / typingElapsedMs) * 60_000) : null;
   const previousPpm = useMemo(() => lastRecordedPpm(initialEvents), [initialEvents]);
   const displayedPpm = sessionPpm ?? previousPpm;
+  const timing = useMemo(() => timingAnalysis(events), [events]);
 
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = initialHtml;
@@ -284,7 +321,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   }, []);
 
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
-    const event: WritingEvent = { sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.innerHTML ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
+    const event: WritingEvent = { writing_session_id: sessionId.current, sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.innerHTML ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
     pending.current.push(event); setEvents(previous => [...previous, event]);
   };
   const syncEvents = async (): Promise<boolean> => {
@@ -388,6 +425,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     const next = event.currentTarget.innerHTML; setHtml(next); markChanged(); record("paste", "insertFromPaste", text, next);
   };
   const format = (command: string, value?: string) => { editorRef.current?.focus(); document.execCommand(command, false, value); const next = editorRef.current?.innerHTML ?? html; setHtml(next); markChanged(); record("format", command, value ?? null, next); };
+  const toggleHeading = () => { const selection = window.getSelection(); const anchor = selection?.anchorNode; const element = anchor instanceof Element ? anchor : anchor?.parentElement; format("formatBlock", element?.closest("h2") ? "p" : "h2"); };
   const seal = async () => {
     if (!await save()) return;
     try {
@@ -404,7 +442,6 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       const next = { ...documentState, versions: [...(documentState.versions ?? []), version], versions_count: (documentState.versions_count ?? 0) + 1 }; setDocumentState(next); onPersist(next);
     } catch { setSaveState("error"); }
   };
-  const replayEvent = events[Math.min(timelineIndex, Math.max(0, events.length - 1))];
   if (timelineOpen) return <Timeline events={events} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
   return <main className="editor-layout">
     <aside className="document-context">
@@ -417,7 +454,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     <section className="writing-surface">
       <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { setTitle(event.target.value); markChanged(); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div><span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span></div>
       <div className="paper">
-        <div className="toolbar" role="toolbar" aria-label="Formato"><button onClick={() => format("bold")}><strong>B</strong></button><button onClick={() => format("italic")}><em>I</em></button><button onClick={() => format("underline")}><u>U</u></button><span></span><button onClick={() => format("formatBlock", "h2")}>T</button><button onClick={() => format("insertUnorderedList")}>☷</button><button onClick={() => format("formatBlock", "blockquote")}>❞</button><small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small></div>
+        <div className="toolbar" role="toolbar" aria-label="Formato" onMouseDown={event => { if (event.target instanceof Element && event.target.closest("button")) event.preventDefault(); }}><button onClick={() => format("bold")}><strong>B</strong></button><button onClick={() => format("italic")}><em>I</em></button><button onClick={() => format("underline")}><u>U</u></button><span></span><button title="Alternar título y párrafo" aria-label="Alternar título y párrafo" onClick={toggleHeading}>T</button><button onClick={() => format("insertUnorderedList")}>☷</button><button onClick={() => format("formatBlock", "blockquote")}>❞</button><small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small></div>
         <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning data-placeholder="Empieza a escribir…" onBeforeInput={onBeforeInput} onInput={onInput} onPaste={onPaste} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
       </div>
       <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar ahora</button><button className="secondary" onClick={() => void openTimeline()}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
@@ -425,7 +462,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     <aside className="evidence-panel">
       <div className="live-title"><span><i></i>Registro en directo</span><small>{events.length} eventos</small></div>
       <div className="metric-hero"><span>{sessionPpm !== null ? "Ritmo de esta sesión" : previousPpm !== null ? "Último ritmo registrado" : "Ritmo de esta sesión"}</span><strong>{displayedPpm ?? "—"}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
-      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{analysis.direct} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Proceso registrado<strong>{duration(replayEvent?.elapsed_ms ?? 0)}</strong></p></li></ul>
+      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{analysis.direct} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Tiempo total registrado<strong>{duration(timing.totalMs)}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>Escritura activa estimada<strong>{duration(timing.writingMs)}</strong></p></li><li><span className="metric-icon revised">✎</span><p>Edición activa estimada<strong>{duration(timing.revisionMs)}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>Pausas de al menos 5 s<strong>{timing.pauseCount} · {duration(timing.pauseMs)}</strong></p></li><li><span className="metric-icon away">↗</span><p>Fuera del editor<strong>{duration(timing.awayMs)}</strong></p></li></ul>
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}
     </aside>

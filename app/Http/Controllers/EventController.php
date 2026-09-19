@@ -77,7 +77,7 @@ class EventController
                 $lastHash = $eventHash;
                 $accepted++;
             }
-            $session->update(['last_sequence' => $lastSequence, 'last_hash' => $lastHash]);
+            $session->update(['last_sequence' => $lastSequence, 'last_hash' => $lastHash, 'ended_at' => now()]);
             return $accepted;
         });
 
