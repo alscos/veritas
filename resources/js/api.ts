@@ -17,6 +17,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       ...(options.headers ?? {}),
     },
   });
+  if (response.status === 419) throw new ApiError("Tu sesión ha caducado. Vuelve a identificarte para continuar.", 419);
+  if (response.status === 401) throw new ApiError("Debes volver a identificarte para continuar.", 401);
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) throw new ApiError("La API de Veritas no está disponible.", response.status);
   const payload = await response.json() as { message?: string; errors?: Record<string, string[]> } & T;

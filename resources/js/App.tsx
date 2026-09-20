@@ -6,6 +6,20 @@ declare global { interface Window { __VERITAS_USER__?: User | null } }
 
 type View = "documents" | "editor" | "timeline" | "submissions";
 type AuthMode = "login" | "register";
+type EditorRecovery = { savedAt: number; html: string; title: string; sessionId: string; startedAt: number; sequence: number; pending: WritingEvent[] };
+
+const recoveryKey = (documentId: string) => `veritas:recovery:${documentId}`;
+const clearRecovery = (documentId: string) => {
+  try { localStorage.removeItem(recoveryKey(documentId)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
+};
+const loadRecovery = (documentId: string, serverUpdatedAt: string): EditorRecovery | null => {
+  try {
+    const raw = localStorage.getItem(recoveryKey(documentId)); if (!raw) return null;
+    const recovery = JSON.parse(raw) as EditorRecovery;
+    if (typeof recovery.html !== "string" || !recovery.sessionId || !Array.isArray(recovery.pending) || recovery.savedAt <= new Date(serverUpdatedAt).getTime()) { clearRecovery(documentId); return null; }
+    return recovery;
+  } catch { return null; }
+};
 
 const now = new Date();
 const iso = (offsetMinutes = 0) => new Date(now.getTime() + offsetMinutes * 60_000).toISOString();
@@ -251,12 +265,13 @@ function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: V
 }
 
 function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
-  const initialHtml = typeof initial.content_html === "string" ? initial.content_html : "";
+  const recovery = useMemo(() => loadRecovery(initial.id, initial.updated_at), [initial.id, initial.updated_at]);
+  const initialHtml = recovery?.html ?? (typeof initial.content_html === "string" ? initial.content_html : "");
   const [documentState, setDocumentState] = useState(initial);
-  const [events, setEvents] = useState<WritingEvent[]>(initialEvents);
-  const [title, setTitle] = useState(initial.title);
+  const [events, setEvents] = useState<WritingEvent[]>([...initialEvents, ...(recovery?.pending ?? [])]);
+  const [title, setTitle] = useState(recovery?.title ?? initial.title);
   const [html, setHtml] = useState(initialHtml);
-  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired">(recovery ? "saving" : "saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
   const [showSend, setShowSend] = useState(false);
@@ -265,14 +280,15 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const [firstTypingAt, setFirstTypingAt] = useState<number | null>(null);
   const [metricNow, setMetricNow] = useState(Date.now());
   const editorRef = useRef<HTMLDivElement>(null);
-  const sessionId = useRef(makeId());
-  const started = useRef(Date.now());
-  const sequence = useRef(0);
-  const pending = useRef<WritingEvent[]>([]);
+  const sessionId = useRef(recovery?.sessionId ?? makeId());
+  const started = useRef(recovery?.startedAt ?? Date.now());
+  const sequence = useRef(recovery?.sequence ?? 0);
+  const pending = useRef<WritingEvent[]>([...(recovery?.pending ?? [])]);
   const syncInFlight = useRef<Promise<boolean> | null>(null);
   const saveInFlight = useRef<Promise<boolean> | null>(null);
-  const changeRevision = useRef(0);
+  const changeRevision = useRef(recovery ? 1 : 0);
   const lastSavedRevision = useRef(0);
+  const sessionExpired = useRef(false);
   const editingProvenance = useRef(false);
   const pendingPasteEdit = useRef<{ mark: HTMLElement; original: string; start: number; end: number } | null>(null);
   const analysis = useMemo(() => analyzeHtml(html), [html]);
@@ -289,12 +305,12 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
 
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = initialHtml;
-    record("start", null, null, initialHtml);
+    record(recovery ? "focus" : "start", null, null, initialHtml);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { if (pending.current.length) void syncEvents(); }, 1200);
+    const timer = window.setInterval(() => { if (!sessionExpired.current && pending.current.length) void syncEvents(); }, 1200);
     return () => { window.clearInterval(timer); void syncEvents(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -320,11 +336,17 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     return () => window.removeEventListener("beforeunload", warnIfPending);
   }, []);
 
+  const persistLocalRecovery = (contentHtml = editorRef.current?.innerHTML ?? html, recoveryTitle = title) => {
+    try { localStorage.setItem(recoveryKey(documentState.id), JSON.stringify({ savedAt: Date.now(), html: contentHtml, title: recoveryTitle, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current } satisfies EditorRecovery)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
+  };
+  const expireSession = () => { sessionExpired.current = true; persistLocalRecovery(); setSaveState("expired"); };
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
     const event: WritingEvent = { writing_session_id: sessionId.current, sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.innerHTML ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
     pending.current.push(event); setEvents(previous => [...previous, event]);
+    if (sessionExpired.current) persistLocalRecovery(event.after_html);
   };
   const syncEvents = async (): Promise<boolean> => {
+    if (sessionExpired.current) return false;
     if (demo) { pending.current = []; return true; }
     if (syncInFlight.current) {
       const synced = await syncInFlight.current;
@@ -335,7 +357,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       try {
         await api(`/documents/${documentState.id}/events`, { method: "POST", body: JSON.stringify({ session_id: sessionId.current, started_at: new Date(started.current).toISOString(), events: batch }) });
         pending.current.splice(0, batch.length); return true;
-      } catch { setSaveState("error"); return false; }
+      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) expireSession(); else setSaveState("error"); return false; }
     })();
     syncInFlight.current = operation;
     const synced = await operation;
@@ -343,6 +365,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     return synced;
   };
   const save = async (): Promise<boolean> => {
+    if (sessionExpired.current) { persistLocalRecovery(); return false; }
     if (saveInFlight.current) {
       const saved = await saveInFlight.current;
       return saved && lastSavedRevision.current < changeRevision.current ? save() : saved;
@@ -362,8 +385,9 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
         setDocumentState(persisted); record("save", null, null, contentHtml);
         if (!await syncEvents()) return false;
         lastSavedRevision.current = Math.max(lastSavedRevision.current, revision);
+        if (revision === changeRevision.current) clearRecovery(documentState.id);
         onPersist(persisted); setSaveState(revision === changeRevision.current ? "saved" : "saving"); return true;
-      } catch { setSaveState("error"); return false; }
+      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) { persistLocalRecovery(contentHtml, snapshotTitle); expireSession(); } else setSaveState("error"); return false; }
     })();
     saveInFlight.current = operation;
     const saved = await operation;
@@ -378,7 +402,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html, title, saveState]);
 
-  const markChanged = () => { changeRevision.current++; setSaveState("saving"); };
+  const markChanged = () => { changeRevision.current++; if (sessionExpired.current) { persistLocalRecovery(); setSaveState("expired"); } else setSaveState("saving"); };
   const openTimeline = async () => {
     const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
     if (!ready) return;
@@ -452,7 +476,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       <div className="privacy-note"><span>⌁</span><p><strong>Solo tú puedes verlo.</strong><br />El acceso cambia únicamente al entregar una versión.</p></div>
     </aside>
     <section className="writing-surface">
-      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { setTitle(event.target.value); markChanged(); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div><span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span></div>
+      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.innerHTML ?? html, nextTitle); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>Sesión caducada · volver a entrar</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span>}</div>
       <div className="paper">
         <div className="toolbar" role="toolbar" aria-label="Formato" onMouseDown={event => { if (event.target instanceof Element && event.target.closest("button")) event.preventDefault(); }}><button onClick={() => format("bold")}><strong>B</strong></button><button onClick={() => format("italic")}><em>I</em></button><button onClick={() => format("underline")}><u>U</u></button><span></span><button title="Alternar título y párrafo" aria-label="Alternar título y párrafo" onClick={toggleHeading}>T</button><button onClick={() => format("insertUnorderedList")}>☷</button><button onClick={() => format("formatBlock", "blockquote")}>❞</button><small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small></div>
         <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning data-placeholder="Empieza a escribir…" onBeforeInput={onBeforeInput} onInput={onInput} onPaste={onPaste} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
