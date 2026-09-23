@@ -1,4 +1,7 @@
 /.env
+/.env.*
+!/.env.example
+/data/
 /vendor/
 /node_modules/
 /public/build/
