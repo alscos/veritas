@@ -16,6 +16,13 @@ class AuthController
         return response()->json(['user' => $request->user()]);
     }
 
+    public function csrf(Request $request): JsonResponse
+    {
+        return response()
+            ->json(['csrf_token' => $request->session()->token()])
+            ->header('Cache-Control', 'no-store, private');
+    }
+
     public function register(Request $request): JsonResponse
     {
         $data = $request->validate([

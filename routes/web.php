@@ -8,6 +8,7 @@ use App\Http\Controllers\SubmissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->middleware('throttle:60,1')->group(function (): void {
+    Route::get('/csrf-token', [AuthController::class, 'csrf']);
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:8,1');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:8,1');
     Route::get('/verify/{code}', [SealController::class, 'verify'])->where('code', 'VRT-[A-Z0-9]+');

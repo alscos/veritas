@@ -71,6 +71,7 @@ h1, h2, p { margin-top: 0; }
 .new-document input { min-height: 46px; border-radius: 9px; border: 0; padding: 0 14px; }
 .new-document .primary { background: var(--coral); }
 .new-document .secondary { background: transparent; color: #fff; border-color: rgba(255,255,255,.35); }
+.new-document .form-error { grid-column: 1/-1; }
 .document-list { border-top: 1px solid var(--line); }
 .list-heading, .document-row { display: grid; grid-template-columns: minmax(320px, 1.8fr) minmax(170px, .8fr) minmax(150px, .7fr) 32px 44px; align-items: center; gap: 20px; }
 .list-heading { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; padding: 14px 18px; }
@@ -226,6 +227,7 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .auth-card h2 { font: 600 2rem Georgia, serif; }
 .auth-card form { margin-top: 28px; }
 .auth-card .primary { margin-top: 20px; }
+.auth-notice { color: #6d5b34; background: var(--gold-soft); border-radius: 9px; padding: 11px 13px; font-size: .78rem; line-height: 1.45; margin: 16px 0 0; }
 .text-button { display: block; margin: 18px auto 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-weight: 750; font-size: .82rem; }
 .loading { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 16px; background: var(--paper); }
 .loading > span { width: 90px; height: 2px; position: relative; overflow: hidden; background: var(--line); }

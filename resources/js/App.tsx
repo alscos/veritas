@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
 import type { Certificate, DocumentVersion, Submission, User, VeritasDocument, WritingEvent } from "./types";
 
 declare global { interface Window { __VERITAS_USER__?: User | null } }
@@ -155,7 +155,7 @@ function Logo() {
   return <div className="brand"><span className="brand-mark" aria-hidden="true">V</span><span>Veritas</span></div>;
 }
 
-function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
+function AuthScreen({ onAuthenticated, notice }: { onAuthenticated: (user: User) => void; notice?: string }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -183,6 +183,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void
       <div className="auth-card">
         <p className="eyebrow">{mode === "login" ? "Acceso" : "Crear una cuenta"}</p>
         <h2>{mode === "login" ? "Vuelve a tus documentos" : "Empieza tu archivo personal"}</h2>
+        {notice && <p className="auth-notice" role="status">{notice}</p>}
         <form onSubmit={submit}>
           {mode === "register" && <label>Nombre<input name="name" autoComplete="name" required /></label>}
           <label>Correo electrónico<input name="email" type="email" autoComplete="email" required /></label>
@@ -214,13 +215,23 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
   </div>;
 }
 
-function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: VeritasDocument[]; onOpen: (document: VeritasDocument) => void; onCreate: (title: string) => void; onDelete: (document: VeritasDocument) => Promise<void> }) {
+function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: VeritasDocument[]; onOpen: (document: VeritasDocument) => void; onCreate: (title: string) => Promise<void>; onDelete: (document: VeritasDocument) => Promise<void> }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [deleting, setDeleting] = useState<VeritasDocument | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const submit = (event: FormEvent) => { event.preventDefault(); onCreate(title.trim() || "Documento sin título"); setTitle(""); setCreating(false); };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setCreateBusy(true); setCreateError("");
+    try {
+      await onCreate(title.trim() || "Documento sin título");
+      setTitle(""); setCreating(false);
+    } catch (reason) {
+      setCreateError(reason instanceof ApiError ? reason.message : "No se pudo crear el documento.");
+    } finally { setCreateBusy(false); }
+  };
   const confirmDelete = async () => {
     if (!deleting) return;
     setDeleteBusy(true); setDeleteError("");
@@ -233,7 +244,7 @@ function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: V
   return <main className="workspace dashboard">
     <section className="dashboard-head">
       <div><p className="eyebrow">Archivo personal</p><h1>Mis documentos</h1><p>Cada texto nace privado. Tú decides cuándo sellarlo, compartirlo o entregarlo.</p></div>
-      <button className="primary" onClick={() => setCreating(true)}><span>＋</span> Nuevo documento</button>
+      <button className="primary" onClick={() => { setCreating(true); setCreateError(""); }}><span>＋</span> Nuevo documento</button>
     </section>
     <section className="summary-strip" aria-label="Resumen">
       <div><strong>{documents.length}</strong><span>documentos</span></div>
@@ -241,9 +252,10 @@ function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: V
       <div><strong>{totalWords.toLocaleString("es")}</strong><span>palabras conservadas</span></div>
       <div className="summary-note"><span className="seal-mini">V</span><p><strong>Tu archivo es privado.</strong><br />Un profesor solo ve lo que entregas.</p></div>
     </section>
-    {creating && <form className="new-document" onSubmit={submit}>
+    {creating && <form className="new-document" onSubmit={event => void submit(event)}>
       <label htmlFor="new-title">Título del nuevo documento</label><input id="new-title" value={title} onChange={event => setTitle(event.target.value)} autoFocus placeholder="Por ejemplo, Comentario de texto" />
-      <button className="primary">Crear y escribir</button><button type="button" className="secondary" onClick={() => setCreating(false)}>Cancelar</button>
+      {createError && <p className="form-error" role="alert">{createError}</p>}
+      <button className="primary" disabled={createBusy}>{createBusy ? "Creando…" : "Crear y escribir"}</button><button type="button" className="secondary" disabled={createBusy} onClick={() => setCreating(false)}>Cancelar</button>
     </form>}
     <section className="document-list">
       <div className="list-heading"><span>Documento</span><span>Proceso</span><span>Último cambio</span><span></span><span></span></div>
@@ -526,8 +538,17 @@ function SubmissionsView({ submissions }: { submissions: Submission[] }) {
 
 export default function App() {
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
+  const [authNotice, setAuthNotice] = useState("");
   const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [submissions] = useState<Submission[]>([]); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
-  useEffect(() => { void (async () => { try { let current = user; if (!current) { const result = await api<{ user: User }>('/me'); current = result.user; setUser(current); } if (current) { const result = await api<{ documents: VeritasDocument[] }>('/documents'); setDocuments(result.documents); } } catch (reason) { if (import.meta.env.DEV && (!(reason instanceof ApiError) || reason.status !== 401)) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    const expire = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? "Tu sesión ha caducado. Vuelve a identificarte para continuar.";
+      setAuthNotice(message); setUser(null); setDocuments([]); setActive(null); setView("documents");
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
+  }, []);
+  useEffect(() => { void (async () => { try { const identity = await api<{ user: User }>('/me'); setUser(identity.user); setAuthNotice(""); const result = await api<{ documents: VeritasDocument[] }>('/documents'); setDocuments(result.documents); } catch (reason) { if (reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) { setUser(null); setDocuments([]); } else if (import.meta.env.DEV) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); }, []);
   const create = async (title: string) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
   const remove = async (document: VeritasDocument) => { if (!demo) await api<{ deleted: boolean }>(`/documents/${document.id}`, { method: 'DELETE' }); setDocuments(previous => previous.filter(item => item.id !== document.id)); setEventsByDocument(previous => { const next = { ...previous }; delete next[document.id]; return next; }); if (active?.id === document.id) setActive(null); };
   const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
@@ -535,9 +556,9 @@ export default function App() {
   const returnToDocuments = () => { setView("documents"); if (!demo) void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => undefined); };
   const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setView("documents"); };
   if (booting) return <main className="loading"><Logo /><span></span><p>Abriendo tu archivo…</p></main>;
-  if (!user) return <AuthScreen onAuthenticated={next => { setUser(next); void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => setDocuments([])); }} />;
+  if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); setUser(next); void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
-    {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={title => void create(title)} onDelete={remove} />}
+    {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={create} onDelete={remove} />}
     {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} onBack={returnToDocuments} onPersist={persist} />}
     {view === "submissions" && <SubmissionsView submissions={submissions} />}
   </Shell>;
