@@ -115,19 +115,34 @@ h1, h2, p { margin-top: 0; }
 .save-state.error { color: #a83e2b; border-color: #d8a496; }
 .save-state.expired { color: #a83e2b; border-color: #d8a496; cursor: pointer; }
 .paper { min-height: calc(100vh - 225px); background: var(--paper); border: 1px solid #d9dcd7; border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-.toolbar { height: 52px; padding: 0 20px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.toolbar { min-height: 52px; padding: 9px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .toolbar button { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 7px; cursor: pointer; font-family: Georgia, serif; font-size: 1rem; }
 .toolbar button:hover { background: #efefeb; }
+.toolbar button.active { color: var(--green); background: var(--mint); }
+.toolbar button:disabled { opacity: .32; cursor: default; }
 .toolbar > span { width: 1px; height: 22px; background: var(--line); margin: 0 7px; }
 .toolbar small { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: .65rem; }
+.toolbar-select { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.toolbar-select > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.toolbar-select select { max-width: 132px; height: 32px; border: 1px solid var(--line); border-radius: 7px; padding: 0 24px 0 8px; color: var(--muted); background: #fff; font-size: .68rem; }
+.toolbar-select.compact select { max-width: 92px; }
 .legend { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .legend.paste { background: var(--coral); }
 .legend.edited { background: var(--blue); margin-left: 7px; }
-.editor { min-height: calc(100vh - 280px); max-width: 730px; margin: 0 auto; padding: clamp(42px, 6vh, 78px) clamp(34px, 6vw, 74px); font: 400 1.08rem/1.82 Georgia, "Times New Roman", serif; caret-color: var(--coral); white-space: pre-wrap; }
-.editor:empty::before { content: attr(data-placeholder); color: #a3aaa6; }
+.editor-host { min-height: calc(100vh - 280px); }
+.editor { min-height: calc(100vh - 280px); max-width: 730px; margin: 0 auto; padding: clamp(42px, 6vh, 78px) clamp(34px, 6vw, 74px); font: 400 1.08rem/1.82 Georgia, "Times New Roman", serif; caret-color: var(--coral); white-space: pre-wrap; outline: 0; }
+.editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: #a3aaa6; pointer-events: none; }
 .editor p { margin: 0 0 1.2em; }
 .editor h2, .editor h3 { font-family: Georgia, serif; line-height: 1.2; }
 .editor blockquote { border-left: 3px solid var(--gold); padding-left: 18px; color: #56615d; }
+.editor-loading { min-height: calc(100vh - 280px); display: grid; place-items: center; color: var(--muted); font-size: .76rem; }
+.editor [data-font="serif"], .replay-paper [data-font="serif"] { font-family: Georgia, "Times New Roman", serif; }
+.editor [data-font="sans"], .replay-paper [data-font="sans"] { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.editor [data-font="mono"], .replay-paper [data-font="mono"] { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.editor [data-size="small"], .replay-paper [data-size="small"] { font-size: .86em; }
+.editor [data-size="normal"], .replay-paper [data-size="normal"] { font-size: 1em; }
+.editor [data-size="large"], .replay-paper [data-size="large"] { font-size: 1.18em; }
+.editor [data-size="x-large"], .replay-paper [data-size="x-large"] { font-size: 1.42em; }
 mark[data-origin="paste"], .replay-paper mark[data-origin="paste"] { background: var(--coral-soft); color: inherit; border-bottom: 1px dotted var(--coral); }
 mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"] { background: var(--blue-soft); color: inherit; border-bottom: 1px solid #78a7bc; }
 .editor-actions { max-width: 100%; display: flex; justify-content: space-between; align-items: center; padding-top: 14px; color: var(--muted); font-size: .77rem; }

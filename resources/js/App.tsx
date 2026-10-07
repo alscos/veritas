@@ -1,6 +1,9 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
 import type { Certificate, DocumentVersion, Submission, User, VeritasDocument, WritingEvent } from "./types";
+import type { EditorMutation, VeritasEditorHandle } from "./VeritasEditor";
+
+const VeritasEditor = lazy(() => import("./VeritasEditor"));
 
 declare global { interface Window { __VERITAS_USER__?: User | null } }
 
@@ -291,7 +294,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const [timelineIndex, setTimelineIndex] = useState(Math.max(0, initialEvents.length - 1));
   const [firstTypingAt, setFirstTypingAt] = useState<number | null>(null);
   const [metricNow, setMetricNow] = useState(Date.now());
-  const editorRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<VeritasEditorHandle>(null);
   const sessionId = useRef(recovery?.sessionId ?? makeId());
   const started = useRef(recovery?.startedAt ?? Date.now());
   const sequence = useRef(recovery?.sequence ?? 0);
@@ -301,8 +304,6 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const changeRevision = useRef(recovery ? 1 : 0);
   const lastSavedRevision = useRef(0);
   const sessionExpired = useRef(false);
-  const editingProvenance = useRef(false);
-  const pendingPasteEdit = useRef<{ mark: HTMLElement; original: string; start: number; end: number } | null>(null);
   const analysis = useMemo(() => analyzeHtml(html), [html]);
   const currentWordCount = analysis.total;
   const pasteWords = analysis.pasted;
@@ -316,7 +317,6 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   const timing = useMemo(() => timingAnalysis(events), [events]);
 
   useEffect(() => {
-    if (editorRef.current) editorRef.current.innerHTML = initialHtml;
     record(recovery ? "focus" : "start", null, null, initialHtml);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -334,12 +334,6 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   }, [firstTypingAt]);
 
   useEffect(() => {
-    if (!timelineOpen && editorRef.current) editorRef.current.innerHTML = html;
-    // `html` is intentionally omitted: resetting on every keystroke would move the caret.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timelineOpen]);
-
-  useEffect(() => {
     const warnIfPending = (event: BeforeUnloadEvent) => {
       if (changeRevision.current <= lastSavedRevision.current && !pending.current.length) return;
       event.preventDefault(); event.returnValue = "";
@@ -348,12 +342,12 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     return () => window.removeEventListener("beforeunload", warnIfPending);
   }, []);
 
-  const persistLocalRecovery = (contentHtml = editorRef.current?.innerHTML ?? html, recoveryTitle = title) => {
+  const persistLocalRecovery = (contentHtml = editorRef.current?.getHTML() ?? html, recoveryTitle = title) => {
     try { localStorage.setItem(recoveryKey(documentState.id), JSON.stringify({ savedAt: Date.now(), html: contentHtml, title: recoveryTitle, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current } satisfies EditorRecovery)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
   };
   const expireSession = () => { sessionExpired.current = true; persistLocalRecovery(); setSaveState("expired"); };
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
-    const event: WritingEvent = { writing_session_id: sessionId.current, sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.innerHTML ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
+    const event: WritingEvent = { writing_session_id: sessionId.current, sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.getHTML() ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
     pending.current.push(event); setEvents(previous => [...previous, event]);
     if (sessionExpired.current) persistLocalRecovery(event.after_html);
   };
@@ -383,7 +377,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       return saved && lastSavedRevision.current < changeRevision.current ? save() : saved;
     }
     const revision = changeRevision.current;
-    const contentHtml = editorRef.current?.innerHTML ?? html;
+    const contentHtml = editorRef.current?.getHTML() ?? html;
     const snapshotTitle = title;
     setHtml(contentHtml); setSaveState("saving");
     const operation = (async () => {
@@ -415,53 +409,18 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   }, [html, title, saveState]);
 
   const markChanged = () => { changeRevision.current++; if (sessionExpired.current) { persistLocalRecovery(); setSaveState("expired"); } else setSaveState("saving"); };
+  const editorMutation = (mutation: EditorMutation) => {
+    setHtml(mutation.html);
+    if (mutation.eventType === "insert" && mutation.inputType !== "insertFromPaste" && mutation.data) setFirstTypingAt(previous => previous ?? Date.now());
+    markChanged();
+    record(mutation.eventType, mutation.inputType, mutation.data ?? null, mutation.html);
+  };
   const openTimeline = async () => {
     const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
     if (!ready) return;
     setTimelineIndex(Math.max(0, events.length - 1)); setTimelineOpen(true);
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
-  const onBeforeInput = (event: React.FormEvent<HTMLDivElement>) => {
-    const selection = window.getSelection();
-    const anchor = selection?.anchorNode; const element = anchor instanceof Element ? anchor : anchor?.parentElement;
-    const originMark = element?.closest?.('mark[data-origin]') as HTMLElement | null;
-    editingProvenance.current = Boolean(originMark);
-    pendingPasteEdit.current = null;
-    if (!selection?.rangeCount || originMark?.dataset.origin !== "paste") return;
-    const range = selection.getRangeAt(0);
-    if (!originMark.contains(range.startContainer) || !originMark.contains(range.endContainer)) return;
-    const offsetWithin = (container: Node, offset: number) => { const probe = document.createRange(); probe.selectNodeContents(originMark); probe.setEnd(container, offset); return probe.toString().length; };
-    pendingPasteEdit.current = { mark: originMark, original: originMark.textContent ?? "", start: offsetWithin(range.startContainer, range.startOffset), end: offsetWithin(range.endContainer, range.endOffset) };
-  };
-  const onInput = (event: React.FormEvent<HTMLDivElement>) => {
-    const target = event.currentTarget; const native = event.nativeEvent as InputEvent;
-    const pendingEdit = pendingPasteEdit.current;
-    const isInsertion = native.inputType?.startsWith("insert") || native.data !== null;
-    const inserted = native.data ?? (native.inputType === "insertParagraph" || native.inputType === "insertLineBreak" ? "\n" : null);
-    if (pendingEdit && isInsertion && inserted !== null && pendingEdit.mark.isConnected) {
-      const fragment = document.createDocumentFragment();
-      const provenanceMark = (text: string, origin: "paste" | "paste-edited") => { const mark = document.createElement("mark"); mark.dataset.origin = origin; mark.textContent = text; return mark; };
-      if (pendingEdit.start > 0) fragment.append(provenanceMark(pendingEdit.original.slice(0, pendingEdit.start), "paste"));
-      const edited = provenanceMark(inserted, "paste-edited"); fragment.append(edited);
-      if (pendingEdit.end < pendingEdit.original.length) fragment.append(provenanceMark(pendingEdit.original.slice(pendingEdit.end), "paste"));
-      pendingEdit.mark.replaceWith(fragment);
-      const selection = window.getSelection(); const caret = document.createRange(); caret.selectNodeContents(edited); caret.collapse(false); selection?.removeAllRanges(); selection?.addRange(caret);
-    }
-    let eventType: WritingEvent["event_type"] = native.inputType?.startsWith("delete") ? "delete" : "insert";
-    if (editingProvenance.current) eventType = "paste_edit";
-    if (eventType === "insert" && native.inputType !== "insertFromPaste" && native.data) setFirstTypingAt(previous => previous ?? Date.now());
-    editingProvenance.current = false; pendingPasteEdit.current = null;
-    const next = target.innerHTML; setHtml(next); markChanged(); record(eventType, native.inputType, native.data, next);
-  };
-  const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    event.preventDefault(); const text = event.clipboardData.getData("text/plain"); const selection = window.getSelection();
-    if (!selection?.rangeCount) return; const range = selection.getRangeAt(0); range.deleteContents();
-    const mark = globalThis.document.createElement("mark"); mark.dataset.origin = "paste"; mark.textContent = text;
-    const neutral = globalThis.document.createTextNode("\u200b"); range.insertNode(neutral); range.insertNode(mark); range.setStartAfter(neutral); range.collapse(true); selection.removeAllRanges(); selection.addRange(range);
-    const next = event.currentTarget.innerHTML; setHtml(next); markChanged(); record("paste", "insertFromPaste", text, next);
-  };
-  const format = (command: string, value?: string) => { editorRef.current?.focus(); document.execCommand(command, false, value); const next = editorRef.current?.innerHTML ?? html; setHtml(next); markChanged(); record("format", command, value ?? null, next); };
-  const toggleHeading = () => { const selection = window.getSelection(); const anchor = selection?.anchorNode; const element = anchor instanceof Element ? anchor : anchor?.parentElement; format("formatBlock", element?.closest("h2") ? "p" : "h2"); };
   const seal = async () => {
     if (!await save()) return;
     try {
@@ -469,7 +428,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       let version: DocumentVersion;
       if (demo) {
         created = { id: makeId(), certificate_code: `VRT-${Math.random().toString(36).slice(2, 12).toUpperCase()}`, issued_at: new Date().toISOString() };
-        version = { id: makeId(), version_number: (documentState.versions_count ?? 0) + 1, snapshot_html: editorRef.current?.innerHTML ?? html, snapshot_text: plainText(editorRef.current?.innerHTML ?? html), word_count: currentWordCount, content_hash: "demostracion", sealed_at: created.issued_at, certificate: created };
+        version = { id: makeId(), version_number: (documentState.versions_count ?? 0) + 1, snapshot_html: editorRef.current?.getHTML() ?? html, snapshot_text: plainText(editorRef.current?.getHTML() ?? html), word_count: currentWordCount, content_hash: "demostracion", sealed_at: created.issued_at, certificate: created };
       } else {
         const result = await api<{ version: DocumentVersion; certificate: Certificate }>(`/documents/${documentState.id}/seal`, { method: "POST", body: "{}" });
         created = result.certificate; version = { ...result.version, certificate: result.certificate };
@@ -488,10 +447,11 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       <div className="privacy-note"><span>⌁</span><p><strong>Solo tú puedes verlo.</strong><br />El acceso cambia únicamente al entregar una versión.</p></div>
     </aside>
     <section className="writing-surface">
-      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.innerHTML ?? html, nextTitle); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>Sesión caducada · volver a entrar</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span>}</div>
+      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>Sesión caducada · volver a entrar</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span>}</div>
       <div className="paper">
-        <div className="toolbar" role="toolbar" aria-label="Formato" onMouseDown={event => { if (event.target instanceof Element && event.target.closest("button")) event.preventDefault(); }}><button onClick={() => format("bold")}><strong>B</strong></button><button onClick={() => format("italic")}><em>I</em></button><button onClick={() => format("underline")}><u>U</u></button><span></span><button title="Alternar título y párrafo" aria-label="Alternar título y párrafo" onClick={toggleHeading}>T</button><button onClick={() => format("insertUnorderedList")}>☷</button><button onClick={() => format("formatBlock", "blockquote")}>❞</button><small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small></div>
-        <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning data-placeholder="Empieza a escribir…" onBeforeInput={onBeforeInput} onInput={onInput} onPaste={onPaste} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
+        <Suspense fallback={<div className="editor-loading">Preparando el documento…</div>}>
+          <VeritasEditor ref={editorRef} initialHtml={html} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
+        </Suspense>
       </div>
       <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar ahora</button><button className="secondary" onClick={() => void openTimeline()}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
     </section>

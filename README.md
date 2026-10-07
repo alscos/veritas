@@ -1,12 +1,14 @@
 # Veritas 0.3
 
-Veritas es una plataforma de escritura que conserva evidencias del proceso, permite crear versiones inmutables y entregarlas sin exponer los borradores posteriores del autor.
+Veritas es un editor de escritura con memoria. Conserva cómo se construye un texto, permite recorrer sus transformaciones, crear versiones inmutables y compartirlas sin exponer los borradores posteriores del autor.
+
+El núcleo está pensado para escritores, investigadores, editores y filólogos. La educación es uno de sus ámbitos de aplicación: añade encargos, entregas y revisión docente sobre el mismo documento y el mismo registro de proceso.
 
 Esta versión establece la arquitectura de producto:
 
 - cuentas de usuario;
 - archivo personal de documentos;
-- editor React con procedencia de texto pegado y reelaborado;
+- editor estructurado React/Tiptap con formato, tipografía y procedencia precisa de texto pegado y reelaborado;
 - eventos encadenados mediante HMAC y fechados por el servidor;
 - versiones selladas con certificado verificable;
 - entregas que apuntan a una versión concreta;
@@ -31,4 +33,4 @@ Consulta [INSTALL.md](INSTALL.md) para Epheso, actualizaciones, copias de seguri
 
 ## Estado
 
-Es una versión de desarrollo para pruebas privadas. El sellado demuestra la integridad del registro recibido por Veritas, no la autoría intelectual absoluta ni la ausencia de ayuda externa. Antes de utilizarla con alumnado real deben completarse correo verificado, recuperación de contraseña, administración institucional, política de retención, pruebas de penetración y revisión jurídica/RGPD.
+Es una versión de desarrollo para pruebas privadas. El sellado demuestra la integridad del registro recibido por Veritas, no la autoría intelectual absoluta ni la ausencia de ayuda externa. Antes de utilizarla con usuarios reales deben completarse correo verificado, recuperación de contraseña, administración, política de retención, pruebas de penetración y revisión jurídica/RGPD.

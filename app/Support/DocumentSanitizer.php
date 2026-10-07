@@ -41,7 +41,9 @@ final class DocumentSanitizer
             foreach (iterator_to_array($child->attributes) as $attribute) {
                 $allowedOrigin = $tag === 'MARK' && $attribute->name === 'data-origin' && in_array($attribute->value, ['paste', 'paste-edited'], true);
                 $allowedProvenance = $tag === 'SPAN' && $attribute->name === 'data-provenance' && in_array($attribute->value, ['typed', 'paste-edited'], true);
-                if (!$allowedOrigin && !$allowedProvenance) $child->removeAttribute($attribute->name);
+                $allowedFont = $tag === 'SPAN' && $attribute->name === 'data-font' && in_array($attribute->value, ['serif', 'sans', 'mono'], true);
+                $allowedSize = $tag === 'SPAN' && $attribute->name === 'data-size' && in_array($attribute->value, ['small', 'normal', 'large', 'x-large'], true);
+                if (!$allowedOrigin && !$allowedProvenance && !$allowedFont && !$allowedSize) $child->removeAttribute($attribute->name);
             }
             self::clean($child);
         }
