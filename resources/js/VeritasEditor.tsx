@@ -4,11 +4,14 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, Slice } from "@tiptap/pm/model";
-import type { EditorState } from "@tiptap/pm/state";
+import { isHistoryTransaction } from "@tiptap/pm/history";
+import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 import type { EditorProps } from "@tiptap/pm/view";
 import type { WritingEvent } from "./types";
 
 export const VERITAS_EVENT_META = "veritas:event";
+const PROVENANCE_APPLIED_META = "veritas:provenance-applied";
 const ORIGINS = new Set(["paste", "paste-edited"]);
 const FONTS = new Set(["serif", "sans", "mono"]);
 const SIZES = new Set(["small", "normal", "large", "x-large"]);
@@ -33,6 +36,7 @@ type Props = {
 export const Provenance = Mark.create({
   name: "veritasProvenance",
   inclusive: false,
+  keepOnSplit: false,
   addAttributes() {
     return {
       origin: {
@@ -44,6 +48,75 @@ export const Provenance = Mark.create({
   },
   parseHTML() { return [{ tag: "mark[data-origin]" }]; },
   renderHTML({ HTMLAttributes }) { return ["mark", mergeAttributes(HTMLAttributes), 0]; },
+  addProseMirrorPlugins() {
+    const provenance = this.type;
+    return [new Plugin({
+      key: new PluginKey("veritasProvenance"),
+      appendTransaction(transactions, oldState, newState) {
+        const correction = newState.tr;
+        let eventMeta: EventMeta | undefined;
+        let continueEditing = false;
+
+        transactions.forEach((transaction, transactionIndex) => {
+          const supplied = transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined;
+          // Formatting, history and imported content already carry their own provenance.
+          if (!transaction.docChanged || transaction.getMeta(PROVENANCE_APPLIED_META)
+            || isHistoryTransaction(transaction) || transaction.getMeta("preventUpdate")
+            || supplied?.eventType === "paste" || supplied?.eventType === "format"
+            || ["paste", "drop"].includes(transaction.getMeta("uiEvent"))) return;
+
+          transaction.steps.forEach((step, stepIndex) => {
+            if (!(step instanceof ReplaceStep)) return;
+            const before = transaction.docs[stepIndex];
+            step.getMap().forEach((from, to, insertedFrom, insertedTo) => {
+              const marks = before.resolve(from).marks();
+              const stored = transactionIndex === 0 && stepIndex === 0
+                && oldState.selection.empty && oldState.selection.from === from
+                ? oldState.storedMarks : null;
+              const imported = before.rangeHasMark(from, to, provenance)
+                || [...marks, ...(stored ?? [])].some(mark => mark.type === provenance && ORIGINS.has(mark.attrs.origin));
+              const insertedText = step.slice.content.textBetween(0, step.slice.content.size, "\n");
+              const hasInsertedText = step.slice.content.textBetween(0, step.slice.content.size, "") !== "";
+              if (!imported || (from === to && !hasInsertedText)) return;
+
+              // Step coordinates belong to that step's document. Map only the
+              // inserted range through subsequent steps, never the surrounding paste.
+              let start = transaction.mapping.slice(stepIndex + 1).map(insertedFrom, 1);
+              let end = transaction.mapping.slice(stepIndex + 1).map(insertedTo, -1);
+              for (const later of transactions.slice(transactionIndex + 1)) {
+                start = later.mapping.map(start, 1);
+                end = later.mapping.map(end, -1);
+              }
+              if (end < start) return;
+              if (hasInsertedText) newState.doc.nodesBetween(start, end, (node, position) => {
+                if (!node.isText) return;
+                const textFrom = Math.max(start, position);
+                const textTo = Math.min(end, position + node.nodeSize);
+                if (textFrom >= textTo) return;
+                correction.removeMark(textFrom, textTo, provenance);
+                correction.addMark(textFrom, textTo, provenance.create({ origin: "paste-edited" }));
+              });
+              if (newState.selection.empty && newState.selection.from >= start && newState.selection.from <= end) continueEditing = true;
+              eventMeta = {
+                eventType: "paste_edit",
+                inputType: supplied?.inputType ?? (hasInsertedText ? "insertReplacementText" : "deleteContent"),
+                data: supplied?.data ?? (hasInsertedText ? insertedText : null),
+              };
+            });
+          });
+        });
+
+        if (!eventMeta) return null;
+        if (continueEditing) {
+          // Keep a replacement run blue after its first character, and remember
+          // the source even when deleting the last pasted character. Moving the
+          // selection clears stored marks through ProseMirror's normal rules.
+          correction.addStoredMark(provenance.create({ origin: "paste-edited" }));
+        }
+        return correction.setMeta(PROVENANCE_APPLIED_META, true).setMeta(VERITAS_EVENT_META, eventMeta);
+      },
+    })];
+  },
 });
 
 export const Typography = Mark.create({
@@ -67,13 +140,12 @@ export const Typography = Mark.create({
   renderHTML({ HTMLAttributes }) { return ["span", mergeAttributes(HTMLAttributes), 0]; },
 });
 
-const selectionHasImportedText = (state: EditorState) => {
+const selectionHasImportedText = (state: EditorState, from = state.selection.from, to = state.selection.to) => {
   const provenance = state.schema.marks.veritasProvenance;
   if (!provenance) return false;
-  const { from, to, empty, $from } = state.selection;
-  const marks = state.storedMarks ?? $from.marks();
+  const marks = state.storedMarks ?? state.doc.resolve(from).marks();
   if (marks.some((mark: { type: unknown; attrs: Record<string, unknown> }) => mark.type === provenance && ORIGINS.has(String(mark.attrs.origin)))) return true;
-  return !empty && state.doc.rangeHasMark(from, to, provenance);
+  return from !== to && state.doc.rangeHasMark(from, to, provenance);
 };
 
 export const createVeritasExtensions = () => [
@@ -94,16 +166,8 @@ export const createVeritasExtensions = () => [
 export const createVeritasEditorProps = (): EditorProps => ({
   attributes: { class: "editor", spellcheck: "true" },
   handleTextInput(view, from, to, text, defaultTransaction) {
-    const imported = selectionHasImportedText(view.state);
-    const provenance = view.state.schema.marks.veritasProvenance;
-    const transaction = imported && provenance
-      ? view.state.tr.insertText(text, from, to)
-      : defaultTransaction();
-    if (imported && provenance) {
-      const end = from + text.length;
-      transaction.removeMark(from, end, provenance);
-      transaction.addMark(from, end, provenance.create({ origin: "paste-edited" }));
-    }
+    const imported = selectionHasImportedText(view.state, from, to);
+    const transaction = defaultTransaction();
     transaction.setMeta(VERITAS_EVENT_META, {
       eventType: imported ? "paste_edit" : "insert",
       inputType: "insertText",
@@ -127,6 +191,7 @@ export const createVeritasEditorProps = (): EditorProps => ({
     } else {
       return true;
     }
+    transaction.setStoredMarks(provenance.removeFromSet(transaction.selection.$from.marks()));
     transaction.setMeta(VERITAS_EVENT_META, { eventType: "paste", inputType: "insertFromPaste", data: normalized } satisfies EventMeta);
     view.dispatch(transaction.scrollIntoView());
     return true;
@@ -139,8 +204,9 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
     content: initialHtml || "",
     extensions: createVeritasExtensions(),
     editorProps: createVeritasEditorProps(),
-    onUpdate({ editor: current, transaction }) {
-      const supplied = transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined;
+    onUpdate({ editor: current, transaction, appendedTransactions }) {
+      const supplied = appendedTransactions.map(item => item.getMeta(VERITAS_EVENT_META) as EventMeta | undefined).find(meta => meta !== undefined)
+        ?? (transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined);
       const delta = transaction.doc.content.size - transaction.before.content.size;
       const eventType: MutationEvent = supplied?.eventType ?? (delta < 0 ? "delete" : delta > 0 ? "insert" : "format");
       const inputType = supplied?.inputType ?? (eventType === "delete" ? "deleteContent" : eventType === "format" ? "format" : "insertContent");
