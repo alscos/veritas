@@ -2,6 +2,8 @@
 /.env.*
 !/.env.example
 /data/
+/database/*.sqlite
+/database/*.sqlite-*
 /vendor/
 /node_modules/
 /public/build/
@@ -14,3 +16,5 @@
 /.vscode/
 .DS_Store
 npm-debug.log*
+/.phpunit.result.cache
+/coverage/
