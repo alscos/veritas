@@ -12,6 +12,8 @@
 
 - Tiptap/ProseMirror y procedencia por rangos;
 - títulos reversibles, listas, citas, tipografía, tamaños y deshacer/rehacer;
+- menú de edición, papel configurable, imágenes privadas y carpetas personales;
+- exportación editable ODT/RTF;
 - modelo JSON versionado junto a la representación HTML;
 - pruebas de compatibilidad, accesibilidad y atajos de teclado;
 - operaciones incrementales con instantáneas periódicas.

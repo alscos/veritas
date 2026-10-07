@@ -50,6 +50,7 @@ class EventController
                 if ($event['sequence'] <= $lastSequence) continue;
                 if ($event['sequence'] !== $lastSequence + 1) abort(409, 'La secuencia de eventos está incompleta.');
                 $afterHtml = DocumentSanitizer::html((string) ($event['after_html'] ?? ''));
+                DocumentSanitizer::validateImages($afterHtml, $document->id);
                 $canonical = json_encode([
                     'session' => $session->id,
                     'sequence' => $event['sequence'],

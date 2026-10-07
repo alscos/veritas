@@ -1,4 +1,6 @@
 export type User = { id: number; name: string; email: string };
+export type PageSettings = { format: "a4" | "a5" | "letter" | "legal"; orientation: "portrait" | "landscape"; margin: 15 | 20 | 25 | 30 };
+export type DocumentFolder = { id: string; name: string; documents_count?: number };
 
 export type Certificate = {
   id: string;
@@ -17,12 +19,15 @@ export type DocumentVersion = {
   process_hash?: string | null;
   sealed_at: string;
   certificate?: Certificate | null;
+  page_settings?: PageSettings | null;
 };
 
 export type VeritasDocument = {
   id: string;
   owner_id: number;
   title: string;
+  folder_id?: string | null;
+  page_settings?: PageSettings | null;
   content_html: string;
   content_text: string;
   word_count: number;

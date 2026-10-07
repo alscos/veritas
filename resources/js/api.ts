@@ -34,7 +34,7 @@ async function request<T>(path: string, options: RequestInit, allowCsrfRetry: bo
     ...options,
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       "X-CSRF-TOKEN": csrf(),
       ...(options.headers ?? {}),
     },

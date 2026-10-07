@@ -1,6 +1,13 @@
 .git
 .env
+.env.*
 node_modules
 vendor
+data
+database/*.sqlite*
+bootstrap/cache/*.php
+public/build
+storage/app/private
 storage/logs/*
+.phpunit.cache
 README.local.md

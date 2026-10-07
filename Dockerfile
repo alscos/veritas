@@ -1,6 +1,6 @@
 FROM composer:2 AS php-dependencies
 WORKDIR /app
-COPY composer.json ./
+COPY composer.json composer.lock ./
 COPY artisan ./
 COPY app ./app
 COPY bootstrap ./bootstrap
@@ -24,6 +24,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+ENV VERITAS_MEDIA_PATH=/data/images
 WORKDIR /var/www/html
 COPY --from=php-dependencies /app/vendor ./vendor
 COPY app ./app
@@ -37,8 +38,9 @@ COPY routes ./routes
 COPY --from=frontend /app/public/build ./public/build
 COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/entrypoint.sh /usr/local/bin/veritas-entrypoint
+COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/veritas-uploads.ini
 RUN chmod +x artisan /usr/local/bin/veritas-entrypoint \
-    && mkdir -p storage/app storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && mkdir -p bootstrap/cache storage/app storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 80

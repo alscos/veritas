@@ -1,7 +1,9 @@
 import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
-import type { Certificate, DocumentVersion, Submission, User, VeritasDocument, WritingEvent } from "./types";
+import type { Certificate, DocumentFolder, DocumentVersion, PageSettings, Submission, User, VeritasDocument, WritingEvent } from "./types";
 import type { EditorMutation, VeritasEditorHandle } from "./VeritasEditor";
+import DocumentsWorkspace from "./DocumentsWorkspace";
+import { DEFAULT_PAGE } from "./pageLayout";
 
 const VeritasEditor = lazy(() => import("./VeritasEditor"));
 
@@ -9,7 +11,7 @@ declare global { interface Window { __VERITAS_USER__?: User | null } }
 
 type View = "documents" | "editor" | "timeline" | "submissions";
 type AuthMode = "login" | "register";
-type EditorRecovery = { savedAt: number; html: string; title: string; sessionId: string; startedAt: number; sequence: number; pending: WritingEvent[] };
+type EditorRecovery = { savedAt: number; html: string; title: string; page?: PageSettings; folderId?: string | null; sessionId: string; startedAt: number; sequence: number; pending: WritingEvent[] };
 
 const recoveryKey = (documentId: string) => `veritas:recovery:${documentId}`;
 const clearRecovery = (documentId: string) => {
@@ -55,7 +57,7 @@ const demoEvents: WritingEvent[] = [
 
 const words = (text: string) => text.trim() ? (text.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'’_-]*/gu) ?? []).length : 0;
 type Provenance = "direct" | "paste" | "paste-edited";
-const blockTags = new Set(["DIV", "P", "H2", "H3", "LI", "BLOCKQUOTE", "UL", "OL"]);
+const blockTags = new Set(["DIV", "P", "H1", "H2", "H3", "LI", "BLOCKQUOTE", "UL", "OL", "TD", "TH", "TR"]);
 const analyzeHtml = (html: string) => {
   const root = document.createElement("div"); root.innerHTML = html;
   let source = ""; const provenance: Provenance[] = [];
@@ -218,74 +220,17 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
   </div>;
 }
 
-function DocumentsView({ documents, onOpen, onCreate, onDelete }: { documents: VeritasDocument[]; onOpen: (document: VeritasDocument) => void; onCreate: (title: string) => Promise<void>; onDelete: (document: VeritasDocument) => Promise<void> }) {
-  const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [createBusy, setCreateBusy] = useState(false);
-  const [createError, setCreateError] = useState("");
-  const [deleting, setDeleting] = useState<VeritasDocument | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
-  const submit = async (event: FormEvent) => {
-    event.preventDefault(); setCreateBusy(true); setCreateError("");
-    try {
-      await onCreate(title.trim() || "Documento sin título");
-      setTitle(""); setCreating(false);
-    } catch (reason) {
-      setCreateError(reason instanceof ApiError ? reason.message : "No se pudo crear el documento.");
-    } finally { setCreateBusy(false); }
-  };
-  const confirmDelete = async () => {
-    if (!deleting) return;
-    setDeleteBusy(true); setDeleteError("");
-    try { await onDelete(deleting); setDeleting(null); }
-    catch (reason) { setDeleteError(reason instanceof ApiError ? reason.message : "No se pudo eliminar el documento."); }
-    finally { setDeleteBusy(false); }
-  };
-  const totalWords = documents.reduce((sum, document) => sum + document.word_count, 0);
-  const sealed = documents.reduce((sum, document) => sum + (document.versions_count ?? 0), 0);
-  return <main className="workspace dashboard">
-    <section className="dashboard-head">
-      <div><p className="eyebrow">Archivo personal</p><h1>Mis documentos</h1><p>Cada texto nace privado. Tú decides cuándo sellarlo, compartirlo o entregarlo.</p></div>
-      <button className="primary" onClick={() => { setCreating(true); setCreateError(""); }}><span>＋</span> Nuevo documento</button>
-    </section>
-    <section className="summary-strip" aria-label="Resumen">
-      <div><strong>{documents.length}</strong><span>documentos</span></div>
-      <div><strong>{sealed}</strong><span>versiones certificadas</span></div>
-      <div><strong>{totalWords.toLocaleString("es")}</strong><span>palabras conservadas</span></div>
-      <div className="summary-note"><span className="seal-mini">V</span><p><strong>Tu archivo es privado.</strong><br />Un profesor solo ve lo que entregas.</p></div>
-    </section>
-    {creating && <form className="new-document" onSubmit={event => void submit(event)}>
-      <label htmlFor="new-title">Título del nuevo documento</label><input id="new-title" value={title} onChange={event => setTitle(event.target.value)} autoFocus placeholder="Por ejemplo, Comentario de texto" />
-      {createError && <p className="form-error" role="alert">{createError}</p>}
-      <button className="primary" disabled={createBusy}>{createBusy ? "Creando…" : "Crear y escribir"}</button><button type="button" className="secondary" disabled={createBusy} onClick={() => setCreating(false)}>Cancelar</button>
-    </form>}
-    <section className="document-list">
-      <div className="list-heading"><span>Documento</span><span>Proceso</span><span>Último cambio</span><span></span><span></span></div>
-      {documents.map(document => <div className="document-row" key={document.id}>
-        <button className="document-open" onClick={() => onOpen(document)}>
-          <span className="doc-main"><span className="doc-icon">{(document.versions_count ?? 0) > 0 ? "V" : "·"}</span><span><strong>{document.title}</strong><small>{document.word_count} palabras · {document.status === "draft" ? "Borrador activo" : "Archivado"}</small></span></span>
-          <span className="process-cell"><span className={(document.versions_count ?? 0) > 0 ? "status sealed" : "status draft"}>{(document.versions_count ?? 0) > 0 ? `${document.versions_count} sellada${document.versions_count === 1 ? "" : "s"}` : "Sin sellar"}</span><small>{document.sessions_count ?? 0} sesiones</small></span>
-          <span className="date-cell">{shortDate(document.updated_at)}</span><span className="row-arrow">→</span>
-        </button>
-        <button className="document-delete" title={`Eliminar ${document.title}`} aria-label={`Eliminar ${document.title}`} onClick={() => { setDeleting(document); setDeleteError(""); }}>×</button>
-      </div>)}
-    </section>
-    {deleting && <Modal title="Eliminar documento" onClose={() => { if (!deleteBusy) setDeleting(null); }}>
-      <p>Vas a eliminar <strong>«{deleting.title}»</strong> y todo su historial de escritura{(deleting.versions_count ?? 0) > 0 ? ", incluidas sus versiones certificadas" : ""}. Esta acción no se puede deshacer.</p>
-      {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
-      <div className="modal-actions"><button className="secondary" disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancelar</button><button className="danger" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "Eliminando…" : "Eliminar definitivamente"}</button></div>
-    </Modal>}
-  </main>;
-}
-
-function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
+function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; folders: DocumentFolder[]; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
   const recovery = useMemo(() => loadRecovery(initial.id, initial.updated_at), [initial.id, initial.updated_at]);
   const initialHtml = recovery?.html ?? (typeof initial.content_html === "string" ? initial.content_html : "");
   const [documentState, setDocumentState] = useState(initial);
   const [events, setEvents] = useState<WritingEvent[]>([...initialEvents, ...(recovery?.pending ?? [])]);
   const [title, setTitle] = useState(recovery?.title ?? initial.title);
   const [html, setHtml] = useState(initialHtml);
+  const [page, setPage] = useState<PageSettings>(recovery?.page ?? initial.page_settings ?? DEFAULT_PAGE);
+  const [folderId, setFolderId] = useState<string | null>(recovery?.folderId !== undefined ? recovery.folderId : initial.folder_id ?? null);
+  const pageRef = useRef(page);
+  const folderRef = useRef(folderId);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired">(recovery ? "saving" : "saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
@@ -343,7 +288,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
   }, []);
 
   const persistLocalRecovery = (contentHtml = editorRef.current?.getHTML() ?? html, recoveryTitle = title) => {
-    try { localStorage.setItem(recoveryKey(documentState.id), JSON.stringify({ savedAt: Date.now(), html: contentHtml, title: recoveryTitle, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current } satisfies EditorRecovery)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
+    try { localStorage.setItem(recoveryKey(documentState.id), JSON.stringify({ savedAt: Date.now(), html: contentHtml, title: recoveryTitle, page: pageRef.current, folderId: folderRef.current, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current } satisfies EditorRecovery)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
   };
   const expireSession = () => { sessionExpired.current = true; persistLocalRecovery(); setSaveState("expired"); };
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
@@ -371,6 +316,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     return synced;
   };
   const save = async (): Promise<boolean> => {
+    if (editorRef.current && !await editorRef.current.waitForUploads()) return false;
     if (sessionExpired.current) { persistLocalRecovery(); return false; }
     if (saveInFlight.current) {
       const saved = await saveInFlight.current;
@@ -379,13 +325,15 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     const revision = changeRevision.current;
     const contentHtml = editorRef.current?.getHTML() ?? html;
     const snapshotTitle = title;
+    const snapshotPage = pageRef.current;
+    const snapshotFolder = folderRef.current;
     setHtml(contentHtml); setSaveState("saving");
     const operation = (async () => {
-      const updated = { ...documentState, title: snapshotTitle, content_html: contentHtml, content_text: plainText(contentHtml), word_count: words(plainText(contentHtml)), updated_at: new Date().toISOString() };
+      const updated: VeritasDocument = { ...documentState, title: snapshotTitle, folder_id: snapshotFolder, page_settings: snapshotPage, content_html: contentHtml, content_text: plainText(contentHtml), word_count: words(plainText(contentHtml)), updated_at: new Date().toISOString() };
       try {
         let persisted = updated;
         if (!demo) {
-          const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ title: snapshotTitle, content_html: contentHtml }) });
+          const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ title: snapshotTitle, folder_id: snapshotFolder, page_settings: snapshotPage, content_html: contentHtml }) });
           persisted = { ...updated, ...result.document };
         }
         setDocumentState(persisted); record("save", null, null, contentHtml);
@@ -406,7 +354,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     const timer = window.setTimeout(() => { void save(); }, 1100);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [html, title, saveState]);
+  }, [html, title, page, folderId, saveState]);
 
   const markChanged = () => { changeRevision.current++; if (sessionExpired.current) { persistLocalRecovery(); setSaveState("expired"); } else setSaveState("saving"); };
   const editorMutation = (mutation: EditorMutation) => {
@@ -414,6 +362,17 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
     if (mutation.eventType === "insert" && mutation.inputType !== "insertFromPaste" && mutation.data) setFirstTypingAt(previous => previous ?? Date.now());
     markChanged();
     record(mutation.eventType, mutation.inputType, mutation.data ?? null, mutation.html);
+  };
+  const changePage = (next: PageSettings) => { pageRef.current = next; setPage(next); markChanged(); record("format", "pageSettings", JSON.stringify(next)); };
+  const uploadImage = async (file: File) => {
+    if (demo) {
+      const src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("No se pudo leer la imagen.")); reader.readAsDataURL(file); });
+      const image = new Image(); image.src = src; await image.decode();
+      return { src, width: image.naturalWidth, height: image.naturalHeight };
+    }
+    const form = new FormData(); form.set("image", file);
+    const result = await api<{ src: string; image: { width: number; height: number; sha256: string } }>(`/documents/${documentState.id}/images`, { method: "POST", body: form });
+    return { src: result.src, ...result.image };
   };
   const openTimeline = async () => {
     const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
@@ -433,6 +392,7 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
         const result = await api<{ version: DocumentVersion; certificate: Certificate }>(`/documents/${documentState.id}/seal`, { method: "POST", body: "{}" });
         created = result.certificate; version = { ...result.version, certificate: result.certificate };
       }
+      if (demo) version.page_settings = pageRef.current;
       setCertificate(created); setShowSeal(false);
       const next = { ...documentState, versions: [...(documentState.versions ?? []), version], versions_count: (documentState.versions_count ?? 0) + 1 }; setDocumentState(next); onPersist(next);
     } catch { setSaveState("error"); }
@@ -443,14 +403,14 @@ function EditorView({ initial, initialEvents, demo, onBack, onPersist }: { initi
       <button className="back-link" onClick={() => void leaveEditor()}>← Mis documentos</button>
       <p className="eyebrow">Documento propio</p>
       <h1>{title || "Sin título"}</h1>
-      <dl><div><dt>Estado</dt><dd>Borrador privado</dd></div><div><dt>Extensión</dt><dd>{currentWordCount} palabras</dd></div><div><dt>Versiones</dt><dd>{documentState.versions_count ?? 0} certificadas</dd></div></dl>
+      <dl><div><dt>Estado</dt><dd>Borrador privado</dd></div><div><dt>Extensión</dt><dd>{currentWordCount} palabras</dd></div><div><dt>Versiones</dt><dd>{documentState.versions_count ?? 0} certificadas</dd></div><div><dt>Carpeta</dt><dd><select aria-label="Carpeta del documento" value={folderId ?? ""} onChange={event => { const next = event.target.value || null; folderRef.current = next; setFolderId(next); markChanged(); }}><option value="">Sin carpeta</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></dd></div></dl>
       <div className="privacy-note"><span>⌁</span><p><strong>Solo tú puedes verlo.</strong><br />El acceso cambia únicamente al entregar una versión.</p></div>
     </aside>
     <section className="writing-surface">
       <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>Sesión caducada · volver a entrar</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span>}</div>
       <div className="paper">
         <Suspense fallback={<div className="editor-loading">Preparando el documento…</div>}>
-          <VeritasEditor ref={editorRef} initialHtml={html} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
+          <VeritasEditor ref={editorRef} initialHtml={html} title={title} page={page} onPageChange={changePage} beforeExport={save} onUploadImage={uploadImage} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
         </Suspense>
       </div>
       <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar ahora</button><button className="secondary" onClick={() => void openTimeline()}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
@@ -500,26 +460,31 @@ export default function App() {
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
   const [authNotice, setAuthNotice] = useState("");
   const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [submissions] = useState<Submission[]>([]); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
+  const [folders, setFolders] = useState<DocumentFolder[]>([]);
+  const loadArchive = async () => { const [texts, groups] = await Promise.all([api<{ documents: VeritasDocument[] }>("/documents"), api<{ folders: DocumentFolder[] }>("/folders")]); setDocuments(texts.documents); setFolders(groups.folders); };
   useEffect(() => {
     const expire = (event: Event) => {
       const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? "Tu sesión ha caducado. Vuelve a identificarte para continuar.";
-      setAuthNotice(message); setUser(null); setDocuments([]); setActive(null); setView("documents");
+      setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
   }, []);
-  useEffect(() => { void (async () => { try { const identity = await api<{ user: User }>('/me'); setUser(identity.user); setAuthNotice(""); const result = await api<{ documents: VeritasDocument[] }>('/documents'); setDocuments(result.documents); } catch (reason) { if (reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) { setUser(null); setDocuments([]); } else if (import.meta.env.DEV) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); }, []);
-  const create = async (title: string) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
+  useEffect(() => { void (async () => { try { const identity = await api<{ user: User }>('/me'); setUser(identity.user); setAuthNotice(""); await loadArchive(); } catch (reason) { if (reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) { setUser(null); setDocuments([]); } else if (import.meta.env.DEV) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); }, []);
+  const create = async (title: string, folderId: string | null = null) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, folder_id: folderId, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title, folder_id: folderId }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
   const remove = async (document: VeritasDocument) => { if (!demo) await api<{ deleted: boolean }>(`/documents/${document.id}`, { method: 'DELETE' }); setDocuments(previous => previous.filter(item => item.id !== document.id)); setEventsByDocument(previous => { const next = { ...previous }; delete next[document.id]; return next; }); if (active?.id === document.id) setActive(null); };
   const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
   const persist = (updated: VeritasDocument) => { setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
-  const returnToDocuments = () => { setView("documents"); if (!demo) void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => undefined); };
-  const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setView("documents"); };
+  const move = async (document: VeritasDocument, folderId: string | null) => { if (demo) persist({ ...document, folder_id: folderId }); else { const result = await api<{ document: VeritasDocument }>(`/documents/${document.id}`, { method: "PATCH", body: JSON.stringify({ folder_id: folderId }) }); persist({ ...document, ...result.document }); } };
+  const saveFolder = async (name: string, id?: string): Promise<DocumentFolder> => { const folder = demo ? { id: id ?? makeId(), name } : (await api<{ folder: DocumentFolder }>(id ? `/folders/${id}` : "/folders", { method: id ? "PATCH" : "POST", body: JSON.stringify({ name }) })).folder; setFolders(previous => [...previous.filter(item => item.id !== folder.id), folder].sort((a, b) => a.name.localeCompare(b.name, "es"))); return folder; };
+  const removeFolder = async (folder: DocumentFolder) => { if (!demo) await api(`/folders/${folder.id}`, { method: "DELETE" }); setFolders(previous => previous.filter(item => item.id !== folder.id)); setDocuments(previous => previous.map(document => document.folder_id === folder.id ? { ...document, folder_id: null } : document)); };
+  const returnToDocuments = () => { setView("documents"); if (!demo) void loadArchive().catch(() => undefined); };
+  const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setFolders([]); setView("documents"); };
   if (booting) return <main className="loading"><Logo /><span></span><p>Abriendo tu archivo…</p></main>;
-  if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); setUser(next); void api<{ documents: VeritasDocument[] }>('/documents').then(result => setDocuments(result.documents)).catch(() => setDocuments([])); }} />;
+  if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
-    {view === "documents" && <DocumentsView documents={documents} onOpen={document => void open(document)} onCreate={create} onDelete={remove} />}
-    {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} onBack={returnToDocuments} onPersist={persist} />}
+    {view === "documents" && <DocumentsWorkspace documents={documents} folders={folders} onOpen={open} onCreate={create} onDelete={remove} onMove={move} onFolderSave={saveFolder} onFolderDelete={removeFolder} />}
+    {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} folders={folders} onBack={returnToDocuments} onPersist={persist} />}
     {view === "submissions" && <SubmissionsView submissions={submissions} />}
   </Shell>;
 }

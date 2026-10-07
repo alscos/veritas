@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Editor, type EditorEvents } from "@tiptap/core";
 import { Slice } from "@tiptap/pm/model";
 import { createVeritasEditorProps, createVeritasExtensions, VERITAS_EVENT_META } from "./VeritasEditor";
+import { findMatches } from "./EditorTools";
 
 const active: Editor[] = [];
 const makeEditor = (content: string, onUpdate?: (event: EditorEvents["update"]) => void) => {
@@ -174,5 +175,33 @@ describe("VeritasEditor", () => {
     expect(html).toContain('data-size="large"');
     const restored = makeEditor(html);
     expect(restored.getHTML()).toBe(html);
+  });
+
+  it("conserva alineación, interlineado, sangría, enlaces y tablas al volver a abrir", () => {
+    const editor = makeEditor('<p><mark data-origin="paste">Texto</mark></p>');
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    editor.commands.setTextAlign("justify");
+    editor.commands.updateAttributes("paragraph", { indent: 2, lineHeight: "2" });
+    editor.commands.setLink({ href: "https://example.org" });
+    editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: true });
+    const html = editor.getHTML();
+    expect(html).toContain("<table");
+    expect(makeEditor(html).getHTML()).toBe(html);
+  });
+
+  it("buscar y reemplazar conserva rojo lo intacto y marca azul cada sustitución", () => {
+    const editor = makeEditor('<p><mark data-origin="paste">viejo y viejo</mark></p>');
+    const matches = findMatches(editor.state.doc, "viejo");
+    const transaction = editor.state.tr;
+    for (const match of matches.reverse()) transaction.insertText("nuevo", match.from, match.to);
+    editor.view.dispatch(transaction);
+    expect(editor.getHTML()).toBe('<p><mark data-origin="paste-edited">nuevo</mark><mark data-origin="paste"> y </mark><mark data-origin="paste-edited">nuevo</mark></p>');
+  });
+
+  it("limpiar el formato no borra las marcas de procedencia", () => {
+    const editor = makeEditor('<p><mark data-origin="paste"><strong>Rojo </strong></mark><mark data-origin="paste-edited"><em>azul</em></mark></p>');
+    editor.commands.selectAll();
+    editor.chain().unsetBold().unsetItalic().unsetUnderline().unsetStrike().unsetMark("veritasTypography").run();
+    expect(editor.getHTML()).toBe('<p><mark data-origin="paste">Rojo </mark><mark data-origin="paste-edited">azul</mark></p>');
   });
 });

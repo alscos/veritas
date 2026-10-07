@@ -28,6 +28,7 @@ class SealController
                 'version_number' => $versionNumber,
                 'snapshot_html' => $document->content_html,
                 'snapshot_text' => $document->content_text,
+                'page_settings' => $document->page_settings,
                 'word_count' => $document->word_count,
                 'content_hash' => $contentHash,
                 'process_hash' => $processHash,
@@ -40,6 +41,8 @@ class SealController
                 'content_hash' => $contentHash,
                 'process_hash' => $processHash,
                 'sealed_at' => $sealedAt->toIso8601String(),
+                'page_settings' => $document->page_settings,
+                'images' => $document->images()->get()->filter(fn ($image) => str_contains($document->content_html, $image->url()))->mapWithKeys(fn ($image) => [$image->id => $image->sha256])->all(),
             ];
             ksort($payload);
             $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);

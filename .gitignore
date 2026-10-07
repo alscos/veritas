@@ -18,3 +18,5 @@
 npm-debug.log*
 /.phpunit.result.cache
 /coverage/
+/.phpunit.cache/
+/bootstrap/cache/*.php

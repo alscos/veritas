@@ -7,6 +7,7 @@ use App\Support\DocumentSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class DocumentController
 {
@@ -22,10 +23,14 @@ class DocumentController
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate(['title' => ['nullable', 'string', 'max:180']]);
+        $data = $request->validate([
+            'title' => ['nullable', 'string', 'max:180'],
+            'folder_id' => ['nullable', 'uuid', Rule::exists('document_folders', 'id')->where('owner_id', $request->user()->id)],
+        ]);
         $document = Document::create([
             'owner_id' => $request->user()->id,
             'title' => trim($data['title'] ?? '') ?: 'Documento sin título',
+            'folder_id' => $data['folder_id'] ?? null,
         ]);
         // Reload database defaults such as content_html before serializing the
         // new document. Otherwise an empty document reaches the client without
@@ -46,10 +51,18 @@ class DocumentController
         $data = $request->validate([
             'title' => ['sometimes', 'nullable', 'string', 'max:180'],
             'content_html' => ['sometimes', 'nullable', 'string', 'max:'.config('veritas.max_document_bytes')],
+            'folder_id' => ['sometimes', 'nullable', 'uuid', Rule::exists('document_folders', 'id')->where('owner_id', $request->user()->id)],
+            'page_settings' => ['sometimes', 'array:format,orientation,margin'],
+            'page_settings.format' => ['required_with:page_settings', Rule::in(['a4', 'a5', 'letter', 'legal'])],
+            'page_settings.orientation' => ['required_with:page_settings', Rule::in(['portrait', 'landscape'])],
+            'page_settings.margin' => ['required_with:page_settings', 'integer', Rule::in([15, 20, 25, 30])],
         ]);
+        if (array_key_exists('folder_id', $data)) $document->folder_id = $data['folder_id'];
+        if (array_key_exists('page_settings', $data)) $document->page_settings = $data['page_settings'];
         if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: 'Documento sin título';
         if (array_key_exists('content_html', $data)) {
             $document->content_html = DocumentSanitizer::html((string) ($data['content_html'] ?? ''));
+            DocumentSanitizer::validateImages($document->content_html, $document->id);
             $document->content_text = DocumentSanitizer::text($document->content_html);
             $document->word_count = DocumentSanitizer::wordCount($document->content_text);
             $document->last_session_at = now();
@@ -69,7 +82,9 @@ class DocumentController
 
         abort_if($hasSubmissions, 409, 'No se puede eliminar un documento que ya ha sido entregado.');
 
+        $paths = $document->images()->get()->map(fn ($image) => $image->path());
         $document->delete();
+        foreach ($paths as $path) if (is_file($path)) @unlink($path);
 
         return response()->json(['deleted' => true]);
     }

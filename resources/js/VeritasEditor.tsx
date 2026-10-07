@@ -1,20 +1,29 @@
-import { forwardRef, useImperativeHandle, useState } from "react";
-import { Mark, mergeAttributes } from "@tiptap/core";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Mark, mergeAttributes, type JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
+import Image from "@tiptap/extension-image";
+import TextAlign from "@tiptap/extension-text-align";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import { TableKit } from "@tiptap/extension-table";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { isHistoryTransaction } from "@tiptap/pm/history";
-import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import type { EditorProps } from "@tiptap/pm/view";
-import type { WritingEvent } from "./types";
+import type { PageSettings, WritingEvent } from "./types";
+import { DEFAULT_PAGE, FONT_FAMILIES, FONT_SIZES, PAGE_GAP, pageDimensions } from "./pageLayout";
+import { PageBreak, Pagination, paginationKey } from "./Pagination";
+import { BlockLayout, SearchHighlights } from "./EditorTools";
+import EditorToolbar from "./EditorToolbar";
 
 export const VERITAS_EVENT_META = "veritas:event";
 const PROVENANCE_APPLIED_META = "veritas:provenance-applied";
 const ORIGINS = new Set(["paste", "paste-edited"]);
-const FONTS = new Set(["serif", "sans", "mono"]);
-const SIZES = new Set(["small", "normal", "large", "x-large"]);
+const FONTS = new Set(Object.keys(FONT_FAMILIES));
+const SIZES = new Set(["small", "normal", "large", "x-large", ...FONT_SIZES.map(String)]);
 
 type MutationEvent = Extract<WritingEvent["event_type"], "insert" | "delete" | "paste" | "paste_edit" | "format">;
 type EventMeta = { eventType: MutationEvent; inputType: string; data?: string | null };
@@ -24,6 +33,8 @@ export type EditorMutation = EventMeta & { html: string };
 export type VeritasEditorHandle = {
   focus: () => void;
   getHTML: () => string;
+  getJSON: () => JSONContent;
+  waitForUploads: () => Promise<boolean>;
 };
 
 type Props = {
@@ -31,6 +42,11 @@ type Props = {
   onBlur: () => void;
   onFocus: () => void;
   onMutation: (mutation: EditorMutation) => void;
+  title: string;
+  page: PageSettings;
+  onPageChange: (page: PageSettings) => void;
+  beforeExport: () => Promise<boolean>;
+  onUploadImage: (file: File) => Promise<{ src: string; width: number; height: number; sha256?: string }>;
 };
 
 export const Provenance = Mark.create({
@@ -134,11 +150,33 @@ export const Typography = Mark.create({
         parseHTML: element => SIZES.has(element.getAttribute("data-size") ?? "") ? element.getAttribute("data-size") : null,
         renderHTML: attributes => SIZES.has(attributes.size) ? { "data-size": attributes.size } : {},
       },
+      color: {
+        default: null,
+        parseHTML: element => /^#[a-f0-9]{6}$/i.test(element.getAttribute("data-color") ?? "") ? element.getAttribute("data-color") : null,
+        renderHTML: attributes => /^#[a-f0-9]{6}$/i.test(attributes.color ?? "") ? { "data-color": attributes.color } : {},
+      },
     };
   },
-  parseHTML() { return [{ tag: "span[data-font]" }, { tag: "span[data-size]" }]; },
-  renderHTML({ HTMLAttributes }) { return ["span", mergeAttributes(HTMLAttributes), 0]; },
+  parseHTML() { return [{ tag: "span[data-font]" }, { tag: "span[data-size]" }, { tag: "span[data-color]" }]; },
+  renderHTML({ HTMLAttributes }) {
+    const font = FONT_FAMILIES[HTMLAttributes["data-font"]];
+    const size = HTMLAttributes["data-size"];
+    const style = [font ? `font-family: ${font.css}` : "", FONT_SIZES.includes(Number(size)) ? `font-size: ${size}pt` : "", HTMLAttributes["data-color"] ? `color: ${HTMLAttributes["data-color"]}` : ""].filter(Boolean).join("; ");
+    return ["span", mergeAttributes(HTMLAttributes, style ? { style } : {}), 0];
+  },
 });
+
+const VeritasImage = Image.extend({
+  addAttributes() {
+    const inherited = this.parent?.() as import("@tiptap/core").Attributes | undefined;
+    return { ...inherited,
+      width: { ...inherited?.width, default: null, renderHTML: attributes => attributes.width ? { width: Math.round(Number(attributes.width)) } : {} },
+      height: { ...inherited?.height, default: null, renderHTML: attributes => attributes.height ? { height: Math.round(Number(attributes.height)) } : {} },
+      sha256: { default: null, parseHTML: element => element.getAttribute("data-image-sha256"), renderHTML: attributes => attributes.sha256 ? { "data-image-sha256": attributes.sha256 } : {} },
+    };
+  },
+  addInputRules() { return []; },
+}).configure({ allowBase64: true, resize: { enabled: true, directions: ["bottom-right", "bottom-left"], minWidth: 40, minHeight: 40, alwaysPreserveAspectRatio: true } });
 
 const selectionHasImportedText = (state: EditorState, from = state.selection.from, to = state.selection.to) => {
   const provenance = state.schema.marks.veritasProvenance;
@@ -148,22 +186,30 @@ const selectionHasImportedText = (state: EditorState, from = state.selection.fro
   return from !== to && state.doc.rangeHasMark(from, to, provenance);
 };
 
-export const createVeritasExtensions = () => [
+export const createVeritasExtensions = (options?: { page?: PageSettings; onPageCount?: (count: number) => void }) => [
   StarterKit.configure({
-    heading: { levels: [2, 3] },
+    heading: { levels: [1, 2, 3] },
     code: false,
     codeBlock: false,
-    horizontalRule: false,
-    link: false,
-    strike: false,
+    link: { openOnClick: false, HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" } },
     trailingNode: false,
   }),
   Placeholder.configure({ placeholder: "Empieza a escribir…" }),
   Provenance,
   Typography,
+  BlockLayout,
+  TextAlign.configure({ types: ["heading", "paragraph"], defaultAlignment: null }),
+  Subscript,
+  Superscript,
+  TableKit.configure({ table: { resizable: true } }),
+  VeritasImage,
+  PageBreak,
+  SearchHighlights,
+  ...(options ? [Pagination.configure({ settings: options.page ?? DEFAULT_PAGE, onPageCount: options.onPageCount ?? (() => undefined) })] : []),
 ];
 
-export const createVeritasEditorProps = (): EditorProps => ({
+export const createVeritasEditorProps = (options?: { onImageFiles: (files: File[], position: number) => void }): EditorProps => {
+  const props: EditorProps = {
   attributes: { class: "editor", spellcheck: "true" },
   handleTextInput(view, from, to, text, defaultTransaction) {
     const imported = selectionHasImportedText(view.state, from, to);
@@ -177,6 +223,8 @@ export const createVeritasEditorProps = (): EditorProps => ({
     return true;
   },
   handlePaste(view, event) {
+    const images = Array.from(event.clipboardData?.files ?? []).filter(file => /^image\/(jpeg|png|webp|gif)$/.test(file.type));
+    if (images.length && options) { options.onImageFiles(images, view.state.selection.from); return true; }
     const text = event.clipboardData?.getData("text/plain");
     const provenance = view.state.schema.marks.veritasProvenance;
     if (text === undefined || !provenance) return false;
@@ -196,14 +244,35 @@ export const createVeritasEditorProps = (): EditorProps => ({
     view.dispatch(transaction.scrollIntoView());
     return true;
   },
-});
+  handleDrop(view, event, _slice, moved) {
+    if (moved) return false;
+    const position = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
+    const images = Array.from(event.dataTransfer?.files ?? []).filter(file => /^image\/(jpeg|png|webp|gif)$/.test(file.type));
+    if (images.length && options) { options.onImageFiles(images, position); return true; }
+    const text = event.dataTransfer?.getData("text/plain");
+    if (!text) return Boolean(event.dataTransfer?.files.length);
+    view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position))));
+    props.handlePaste?.call(props, view, { clipboardData: { getData: () => text } } as unknown as ClipboardEvent, Slice.empty);
+    return true;
+  },
+  };
+  return props;
+};
 
-const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEditor({ initialHtml, onBlur, onFocus, onMutation }, ref) {
+const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEditor({ initialHtml, onBlur, onFocus, onMutation, title, page, onPageChange, beforeExport, onUploadImage }, ref) {
   const [, renderToolbar] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+  const [zoom, setZoom] = useState(0);
+  const [availableWidth, setAvailableWidth] = useState(800);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const viewport = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploads = useRef(new Set<Promise<boolean>>());
   const editor = useEditor({
     content: initialHtml || "",
-    extensions: createVeritasExtensions(),
-    editorProps: createVeritasEditorProps(),
+    extensions: createVeritasExtensions({ page, onPageCount: setPageCount }),
+    editorProps: createVeritasEditorProps({ onImageFiles: (files, position) => uploadFiles(files, position) }),
     onUpdate({ editor: current, transaction, appendedTransactions }) {
       const supplied = appendedTransactions.map(item => item.getMeta(VERITAS_EVENT_META) as EventMeta | undefined).find(meta => meta !== undefined)
         ?? (transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined);
@@ -218,45 +287,69 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
     onBlur() { onBlur(); },
   });
 
+  const uploadFiles = (files: File[], position: number) => {
+    if (!editor) return;
+    const bookmark = { position };
+    const mapPosition = ({ transaction }: { transaction: import("@tiptap/pm/state").Transaction }) => { bookmark.position = transaction.mapping.map(bookmark.position, 1); };
+    editor.on("transaction", mapPosition);
+    const operation = (async () => {
+      setBusy(true); setMessage("");
+      try {
+        for (const file of files) {
+          if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Elige una imagen JPG, PNG, WebP o GIF de hasta 5 MB.");
+          const image = await onUploadImage(file);
+          if (editor.isDestroyed) return false;
+          const dimensions = pageDimensions(page);
+          const maxWidth = dimensions.widthPx - dimensions.marginPx * 2;
+          const maxHeight = dimensions.heightPx - dimensions.marginPx * 2 - 40;
+          const width = Math.min(image.width, maxWidth, 600, maxHeight * image.width / image.height);
+          editor.chain().setMeta(VERITAS_EVENT_META, { eventType: "format", inputType: "insertImage", data: JSON.stringify({ name: file.name, sha256: image.sha256 ?? null }) }).insertContentAt(bookmark.position, { type: "image", attrs: { src: image.src, alt: file.name.slice(0, 300), width: Math.round(width), height: Math.round(width * image.height / image.width), sha256: image.sha256 ?? null } }).run();
+        }
+        return true;
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "No se pudo guardar la imagen."); return false; }
+      finally { editor.off("transaction", mapPosition); }
+    })();
+    uploads.current.add(operation);
+    void operation.finally(() => { uploads.current.delete(operation); setBusy(uploads.current.size > 0); });
+  };
+
+  useEffect(() => {
+    if (!editor) return;
+    const previous = paginationKey.getState(editor.state)!;
+    editor.view.dispatch(editor.state.tr.setMeta(paginationKey, { ...previous, settings: page, breaks: {}, flows: {}, blocks: {} }).setMeta("addToHistory", false));
+  }, [editor, page]);
+  useEffect(() => {
+    const element = viewport.current; if (!element) return;
+    const update = () => setAvailableWidth(Math.max(200, element.clientWidth - 40));
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    observer?.observe(element); update(); return () => observer?.disconnect();
+  }, [editor]);
+
   useImperativeHandle(ref, () => ({
     focus: () => editor?.commands.focus(),
     getHTML: () => editor?.getHTML() ?? initialHtml,
+    getJSON: () => editor?.getJSON() ?? { type: "doc", content: [] },
+    waitForUploads: async () => { const results = await Promise.all(Array.from(uploads.current)); return results.every(Boolean); },
   }), [editor, initialHtml]);
 
   if (!editor) return <div className="editor-loading">Preparando el documento…</div>;
 
-  const setEventMeta = (inputType: string, data: string | null = null) => ({
-    eventType: "format" as const,
-    inputType,
-    data,
-  });
-  const typography = editor.getAttributes("veritasTypography") as { font?: string | null; size?: string | null };
-  const setTypography = (attribute: "font" | "size", value: string) => {
-    const next = { font: typography.font ?? null, size: typography.size ?? null, [attribute]: value || null };
-    const chain = editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta(`typography:${attribute}`, value || null));
-    if (!next.font && !next.size) chain.unsetMark("veritasTypography").run();
-    else chain.setMark("veritasTypography", next).run();
-  };
-  const button = (active: boolean) => active ? "active" : undefined;
-
+  const dimensions = pageDimensions(page);
+  const scale = zoom || Math.min(1, availableWidth / dimensions.widthPx);
+  const height = pageCount * (dimensions.heightPx + PAGE_GAP) - PAGE_GAP;
   return <>
-    <div className="toolbar" role="toolbar" aria-label="Formato" onMouseDown={event => { if (event.target instanceof Element && event.target.closest("button")) event.preventDefault(); }}>
-      <button type="button" className={button(editor.isActive("bold"))} aria-pressed={editor.isActive("bold")} title="Negrita" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("bold")).toggleBold().run()}><strong>B</strong></button>
-      <button type="button" className={button(editor.isActive("italic"))} aria-pressed={editor.isActive("italic")} title="Cursiva" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("italic")).toggleItalic().run()}><em>I</em></button>
-      <button type="button" className={button(editor.isActive("underline"))} aria-pressed={editor.isActive("underline")} title="Subrayado" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("underline")).toggleUnderline().run()}><u>U</u></button>
-      <span aria-hidden="true"></span>
-      <button type="button" className={button(editor.isActive("heading", { level: 2 }))} aria-pressed={editor.isActive("heading", { level: 2 })} title="Alternar título y párrafo" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("heading:2")).toggleHeading({ level: 2 }).run()}>T</button>
-      <button type="button" className={button(editor.isActive("bulletList"))} aria-pressed={editor.isActive("bulletList")} title="Lista con viñetas" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("bullet-list")).toggleBulletList().run()}>☷</button>
-      <button type="button" className={button(editor.isActive("orderedList"))} aria-pressed={editor.isActive("orderedList")} title="Lista numerada" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("ordered-list")).toggleOrderedList().run()}>1.</button>
-      <button type="button" className={button(editor.isActive("blockquote"))} aria-pressed={editor.isActive("blockquote")} title="Cita" onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("blockquote")).toggleBlockquote().run()}>❞</button>
-      <span aria-hidden="true"></span>
-      <label className="toolbar-select"><span>Fuente</span><select aria-label="Familia tipográfica" value={typography.font ?? ""} onChange={event => setTypography("font", event.target.value)}><option value="">Documento</option><option value="serif">Serif editorial</option><option value="sans">Sans serif</option><option value="mono">Monoespaciada</option></select></label>
-      <label className="toolbar-select compact"><span>Tamaño</span><select aria-label="Tamaño de texto" value={typography.size ?? ""} onChange={event => setTypography("size", event.target.value)}><option value="">Normal</option><option value="small">Pequeño</option><option value="large">Grande</option><option value="x-large">Muy grande</option></select></label>
-      <button type="button" title="Deshacer" aria-label="Deshacer" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("historyUndo")).undo().run()}>↶</button>
-      <button type="button" title="Rehacer" aria-label="Rehacer" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().setMeta(VERITAS_EVENT_META, setEventMeta("historyRedo")).redo().run()}>↷</button>
-      <small><i className="legend paste"></i>Pegado <i className="legend edited"></i>Reelaborado</small>
+    <EditorToolbar editor={editor} title={title} page={page} onPageChange={onPageChange} onImage={() => fileInput.current?.click()} beforeExport={beforeExport} busy={busy} zoom={zoom} onZoom={setZoom} onError={setMessage}/>
+    <input type="file" ref={fileInput} className="visually-hidden" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={event => { const files = Array.from(event.target.files ?? []); if (files.length) uploadFiles(files, editor.state.selection.from); event.target.value = ""; }}/>
+    {(message || busy) && <div className={`editor-message${message ? " error" : ""}`} role={message ? "alert" : "status"}>{message || "Guardando imagen… puedes seguir escribiendo."}</div>}
+    <div className="page-viewport" ref={viewport}>
+      <div className="page-scaled" style={{ width: dimensions.widthPx * scale, height: height * scale }}>
+        <div className="page-canvas" style={{ width: dimensions.widthPx, minHeight: height, transform: `scale(${scale})` }}>
+          <div className="page-backgrounds" aria-hidden="true">{Array.from({ length: pageCount }, (_, index) => <div key={index} style={{ top: index * (dimensions.heightPx + PAGE_GAP), height: dimensions.heightPx }}><span>{index + 1}</span></div>)}</div>
+          <EditorContent editor={editor} className="editor-host paginated-host" style={{ "--page-margin": `${dimensions.marginPx}px`, "--page-image-height": `${dimensions.heightPx - dimensions.marginPx * 2 - 40}px`, "--page-min-height": `${height}px` } as React.CSSProperties}/>
+        </div>
+      </div>
     </div>
-    <EditorContent editor={editor} className="editor-host" />
+    <div className="page-status"><span>{pageCount} {pageCount === 1 ? "página" : "páginas"} · {page.format.toUpperCase()} · {Math.round(scale * 100)}%</span><small><i className="legend paste"/>Pegado <i className="legend edited"/>Reelaborado</small></div>
   </>;
 });
 

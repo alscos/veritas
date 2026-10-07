@@ -6,7 +6,7 @@ Veritas evoluciona de un campo `contentEditable` controlado manualmente a un edi
 
 La educación pasa a ser un módulo de uso, no la definición del núcleo. El mismo documento con memoria puede servir a un escritor, un editor, un investigador de procesos creativos o un alumno.
 
-## Primera etapa implementada
+## Primera etapa del núcleo
 
 - negrita, cursiva y subrayado;
 - títulos H2 reversibles a párrafo;
@@ -20,7 +20,10 @@ La educación pasa a ser un módulo de uso, no la definición del núcleo. El mi
 - carga diferida del motor editorial;
 - pruebas automáticas de los invariantes principales.
 
-No se ha cambiado todavía el esquema de base de datos. Los documentos anteriores siguen abriéndose porque el editor importa el HTML saneado actual y vuelve a producir HTML compatible.
+La primera etapa no cambió el esquema de base de datos. La ampliación posterior
+del [taller editorial](EDITOR_WORKSPACE.md) añade carpetas, configuración de papel
+e imágenes mediante una migración aditiva. Los documentos anteriores siguen
+abriéndose mediante el HTML saneado, con A4 como configuración de papel inicial.
 
 ## Invariantes que no deben romperse
 
