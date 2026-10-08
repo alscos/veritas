@@ -42,7 +42,7 @@ Si Git informa de una divergencia o un conflicto, resolverlo antes de seguir. No
 
 ## 3. Qué hace GitHub al actualizar main
 
-`.github/workflows/release.yml` ejecuta pruebas de frontend, PHP y los actualizadores, prueba migraciones y texto Unicode con MySQL 8.4 real, compila el frontend y comprueba la construcción de Docker. Solo si todo pasa publica una release privada **build-SHA12**, con dos ZIP y sus hashes:
+`.github/workflows/release.yml` ejecuta pruebas de frontend, PHP y los actualizadores, prueba migraciones y texto Unicode con MySQL 8.4 real y compila el frontend. Además, extrae el ZIP real de Alpine con los permisos del actualizador, construye la imagen y arranca Apache contra MySQL. Comprueba los comandos de Laravel, la lectura del código como `www-data`, la portada, los recursos del editor y el diagnóstico durante mantenimiento. Solo si todo pasa publica una release privada **build-SHA12**, con dos ZIP y sus hashes:
 
 | Destino | Paquete | Contenido |
 | --- | --- | --- |
@@ -147,6 +147,8 @@ Tras instalar, entrar de nuevo y probar un documento: escribir, guardar, recarga
 Un hash incorrecto, paquete incompleto, fallo de construcción o copia SQL fallida detienen la actualización. Si aún no ha empezado la activación/migración, se vuelve a abrir la versión anterior cuando es posible. Si falla una migración o una comprobación posterior, se conserva mantenimiento, copia y registro; el comando devuelve error y no declara la revisión instalada.
 
 No se restaura SQL, no se ejecuta `migrate:rollback` y no se borran documentos automáticamente. Revisar el error y la compatibilidad del esquema antes de restaurar. En SiteGround consultar `deployment.log` de la copia; en Alpine `docker compose logs --tail=100 app`. El marcador `data/app/deploy-maintenance` mantiene la aplicación cerrada también tras reiniciar el contenedor: retirarlo y ejecutar `php artisan up` después de resolver la incidencia. Si un proceso de Alpine murió sin limpiar el bloqueo, comprobar que no sigue activo antes de retirar `data/app/update/deploy-lock`.
+
+En `build-43b1b2b3009f`, el primer arranque de Alpine reveló que la imagen no incluía `composer.json`, necesario para descubrir los comandos de Laravel. El Dockerfile corregido conserva ese manifiesto en ejecución y garantiza que Apache puede leer el código incluso cuando procede de un ZIP extraído con permisos privados. El workflow anterior solo probaba la construcción; la nueva comprobación de arranque evita publicar otra imagen con este fallo. Si esa versión dejó Alpine en mantenimiento, aplicar el Dockerfile corregido, reconstruir solo `app` y comprobar el arranque y las migraciones antes de retirar el marcador. La copia SQL y las claves existentes se conservan.
 
 ## Validación de esta entrega
 

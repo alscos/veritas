@@ -30,6 +30,7 @@ WORKDIR /var/www/html
 COPY --from=php-dependencies /app/vendor ./vendor
 COPY app ./app
 COPY artisan ./artisan
+COPY composer.json composer.lock ./
 COPY bootstrap ./bootstrap
 COPY config ./config
 COPY database ./database
@@ -43,6 +44,8 @@ COPY docker/entrypoint.sh /usr/local/bin/veritas-entrypoint
 COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/veritas-uploads.ini
 RUN chmod +x artisan /usr/local/bin/veritas-entrypoint \
     && mkdir -p bootstrap/cache storage/app storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && chgrp -R www-data app bootstrap config database public resources routes vendor deploy \
+    && chmod -R g+rX app bootstrap config database public resources routes vendor deploy \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 80

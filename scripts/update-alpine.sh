@@ -88,10 +88,16 @@ activated=1
 helper apply
 docker image tag "$candidate" veritas-app:latest
 docker compose up -d --no-deps --no-build app
+echo 'Esperando el arranque de Apache y las migraciones de la nueva versión.'
 attempt=0
 until docker compose exec -T app php -r '$c=stream_context_create(["http"=>["timeout"=>2,"ignore_errors"=>true]]); @file_get_contents("http://127.0.0.1/up",false,$c); exit(preg_match("~^HTTP/\\S+ 200~",$http_response_header[0]??"")?0:1);' >/dev/null 2>&1; do
     attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then echo "La nueva versión no responde. Consulte docker compose logs app y $backup." >&2; exit 1; fi
+    if [ "$attempt" -ge 30 ]; then
+        echo "La nueva versión no responde. Consulte docker compose logs app y $backup." >&2
+        docker compose ps >&2 || true
+        docker compose logs --tail=60 app >&2 || true
+        exit 1
+    fi
     sleep 2
 done
 docker compose exec -T app php artisan migrate:status

@@ -60,8 +60,13 @@ jobs:
           php scripts/check-mysql-release.php
       - run: sh scripts/package-siteground.sh releases
       - run: sh scripts/package-alpine.sh releases
-      - name: Validate Docker runtime build
-        run: docker build --tag inkgroove-ci .
+      - name: Boot Docker from the Alpine release package
+        env:
+          INKGROOVE_DOCKER_SMOKE_CI: '1'
+          DB_DATABASE: inkgroove_ci
+          DB_USERNAME: root
+          DB_PASSWORD: ci-only-password
+        run: sh scripts/check-alpine-runtime.sh "releases/inkgroove-alpine-$(printf '%.12s' "$GITHUB_SHA").zip"
       - uses: actions/upload-artifact@v4
         with:
           name: release-packages
@@ -96,7 +101,7 @@ jobs:
               exit 0
             fi
           else
-            gh release create "$tag" --target "$REVISION" --draft --prerelease --title "InkGroove $tag" --notes "Validated PHP/frontend/MySQL tests and Docker build. Revision: $REVISION. Separate packages for SiteGround and Alpine."
+            gh release create "$tag" --target "$REVISION" --draft --prerelease --title "InkGroove $tag" --notes "Validated PHP/frontend/MySQL tests and packaged Docker runtime startup. Revision: $REVISION. Separate packages for SiteGround and Alpine."
           fi
           gh release upload "$tag" releases/*.zip releases/*.zip.sha256 --clobber
           gh release edit "$tag" --draft=false
