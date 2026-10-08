@@ -1,6 +1,6 @@
-# Veritas 0.3
+# InkGroove
 
-Veritas es un editor de escritura con memoria. Conserva cómo se construye un texto, permite recorrer sus transformaciones, crear versiones inmutables y compartirlas sin exponer los borradores posteriores del autor.
+InkGroove es un editor de escritura con memoria. Conserva cómo se construye un texto, permite recorrer sus transformaciones, crear versiones inmutables y compartirlas sin exponer los borradores posteriores del autor. Los identificadores internos de Veritas se mantienen para conservar datos y sellos existentes.
 
 El núcleo está pensado para escritores, investigadores, editores y filólogos. La educación es uno de sus ámbitos de aplicación: añade encargos, entregas y revisión docente sobre el mismo documento y el mismo registro de proceso.
 
@@ -16,6 +16,8 @@ Esta versión establece la arquitectura de producto:
 - moviola del proceso de escritura.
 
 ## Instalación rápida con Docker
+
+Para mantener la demo privada y actualizar desde GitHub tanto Alpine como SiteGround, consultar [docs/UPDATES.md](docs/UPDATES.md). El perfil de hosting está en [docs/SITEGROUND.md](docs/SITEGROUND.md).
 
 ```bash
 cp .env.example .env

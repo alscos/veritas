@@ -18,5 +18,9 @@
 npm-debug.log*
 /.phpunit.result.cache
 /coverage/
+/releases/
+/.inkgroove-updates/
 /.phpunit.cache/
+__pycache__/
+*.pyc
 /bootstrap/cache/*.php

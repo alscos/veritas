@@ -1,0 +1,102 @@
+name: Validate and package InkGroove
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inkgroove-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: inkgroove_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-only-password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: ctype, curl, dom, fileinfo, intl, mbstring, pdo_mysql, pdo_sqlite, xml, zip
+          tools: composer:v2
+          coverage: none
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci
+      - run: npm test
+      - run: php vendor/bin/phpunit
+      - run: python3 -m unittest discover -s tests/deployment -v
+      - name: Verify migrations and empty documents on real MySQL
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_DATABASE: inkgroove_ci
+          DB_USERNAME: root
+          DB_PASSWORD: ci-only-password
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          VERITAS_SIGNING_KEY: ci-signing-key-for-smoke-test-only
+        run: |
+          php artisan migrate --force
+          php scripts/check-mysql-release.php
+      - run: sh scripts/package-siteground.sh releases
+      - run: sh scripts/package-alpine.sh releases
+      - name: Validate Docker runtime build
+        run: docker build --tag inkgroove-ci .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-packages
+          path: |
+            releases/*.zip
+            releases/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: releases
+      - name: Publish complete, versioned private release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -eu
+          tag="build-$(printf '%.12s' "$REVISION")"
+          if gh release view "$tag" --json isDraft --jq .isDraft >/tmp/draft 2>/dev/null; then
+            if [ "$(cat /tmp/draft)" = false ]; then
+              echo "This immutable build is already published."
+              exit 0
+            fi
+          else
+            gh release create "$tag" --target "$REVISION" --draft --prerelease --title "InkGroove $tag" --notes "Validated PHP/frontend/MySQL tests and Docker build. Revision: $REVISION. Separate packages for SiteGround and Alpine."
+          fi
+          gh release upload "$tag" releases/*.zip releases/*.zip.sha256 --clobber
+          gh release edit "$tag" --draft=false

@@ -8,7 +8,7 @@ if [ ! -f /data/veritas.env ]; then
     app_key="base64:$(openssl rand -base64 32)"
     signing_key="$(openssl rand -hex 48)"
     cat > /data/veritas.env <<EOF
-APP_NAME=Veritas
+APP_NAME=InkGroove
 APP_ENV=production
 APP_KEY=${app_key}
 APP_DEBUG=false
@@ -44,6 +44,7 @@ until mariadb-admin ping --silent --host="${DB_HOST:-db}" --port="${DB_PORT:-330
     sleep 2
 done
 
+if [ -f /data/deploy-maintenance ]; then php artisan down --retry=60; fi
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache

@@ -52,7 +52,7 @@ for directory in migrations seeders; do
     if [ -d "$ROOT/database/$directory" ]; then cp -R "$ROOT/database/$directory" "$CORE/database/$directory"; fi
 done
 cp -R "$ROOT/resources/views" "$CORE/resources/views"
-cp -R "$ROOT/deploy/siteground" "$CORE/deploy/siteground"
+cp -R "$ROOT/deploy/." "$CORE/deploy/"
 for file in artisan composer.json composer.lock; do cp "$ROOT/$file" "$CORE/$file"; done
 mkdir -p "$CORE/bootstrap/cache" "$CORE/storage/app/private/images" \
     "$CORE/storage/framework/cache/data" "$CORE/storage/framework/sessions" \
@@ -75,8 +75,9 @@ cp -R "$ROOT/public/build" "$PUBLIC/build"
 cp "$ROOT/resources/fonts/OFL.txt" "$PUBLIC/build/OFL.txt"
 cp "$ROOT/docs/SITEGROUND.md" "$STAGE/INSTALL-SITEGROUND.md"
 REVISION="$REVISION" STAMP="$STAMP" CANDIDATE="$CANDIDATE" \
-    "$PHP_BIN" -r 'file_put_contents($argv[1], json_encode(["revision" => getenv("REVISION"), "candidate" => getenv("CANDIDATE") === "1", "built_at_utc" => getenv("STAMP"), "php_build_version" => PHP_VERSION], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES).PHP_EOL);' "$STAGE/BUILD-INFO.json"
+    "$PHP_BIN" -r 'file_put_contents($argv[1], json_encode(["profile" => "siteground", "revision" => getenv("REVISION"), "candidate" => getenv("CANDIDATE") === "1", "built_at_utc" => getenv("STAMP"), "php_build_version" => PHP_VERSION], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES).PHP_EOL);' "$STAGE/BUILD-INFO.json"
 "$PHP_BIN" "$ROOT/scripts/check-siteground-package.php" "$STAGE"
 
 tar -czf "$ARCHIVE" -C "$STAGE" .
+"$PHP_BIN" "$ROOT/scripts/make-release-zip.php" "$STAGE" "$OUT/inkgroove-siteground-$LABEL.zip"
 "$PHP_BIN" -r 'file_put_contents($argv[1].".sha256", hash_file("sha256", $argv[1])."  ".basename($argv[1]).PHP_EOL); echo "Paquete: ", $argv[1], PHP_EOL, "SHA256: ", hash_file("sha256", $argv[1]), PHP_EOL;' "$ARCHIVE"

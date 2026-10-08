@@ -7,6 +7,7 @@ COPY bootstrap ./bootstrap
 COPY config ./config
 COPY database ./database
 COPY routes ./routes
+COPY deploy ./deploy
 COPY resources/views ./resources/views
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
@@ -35,6 +36,7 @@ COPY database ./database
 COPY public ./public
 COPY resources/views ./resources/views
 COPY routes ./routes
+COPY deploy ./deploy
 COPY --from=frontend /app/public/build ./public/build
 COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/entrypoint.sh /usr/local/bin/veritas-entrypoint

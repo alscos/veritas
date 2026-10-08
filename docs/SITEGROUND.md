@@ -1,8 +1,8 @@
 # InkGroove en SiteGround GrowBig
 
-Candidato para una demo o piloto pequeño. Este perfil mantiene Laravel 12, PHP 8.3+, MySQL/MariaDB y el editor React/Tiptap. El frontend se compila antes de subirlo; el hosting no necesita Docker, Node, Redis ni un proceso permanente de colas para las funciones actuales. La instalación real se valida en la cuenta de SiteGround antes de marcar una versión como probada allí.
+Perfil para una demo o piloto pequeño. Mantiene Laravel 12, PHP 8.3+, MySQL/MariaDB y el editor React/Tiptap. El frontend se compila antes de subirlo; el hosting no necesita Docker, Node, Redis ni un proceso permanente de colas para las funciones actuales.
 
-Validación local del candidato: compilación de producción, 20 pruebas del frontend, 7 pruebas PHP, fuentes españolas y ensayo del paquete con el núcleo separado y configuración, rutas y vistas cacheadas. El ensayo local usa SQLite; quedan pendientes MySQL, Apache/caché y SSL de SiteGround. Las pruebas se amplían o repiten si aparecen cambios o errores que lo justifiquen.
+La instalación en inkgroove.com quedó operativa el 8 de octubre de 2026: migraciones en MySQL, preflight completo, HTTPS y `/up` HTTP 200. El usuario confirmó que la aplicación funciona. HTML y API responden con `private, no-store`, con MISS en la caché de SiteGround. Esto no equivale a una prueba de carga ni a completar todos los casos de aceptación siguientes. La nueva automatización de actualizaciones tiene pruebas locales propias y necesita su primera ejecución en GitHub y en los servidores.
 
 ## Qué cambia
 
@@ -26,7 +26,7 @@ git diff --check
 git status --short
 ```
 
-El último comprobador necesita `fontTools` y Pillow con RAQM solo en desarrollo. Revisar que los cambios correspondan a la marca y al perfil de hosting; nunca añadir `.env`, `data/` ni claves SSH. Título sugerido: `Prepare InkGroove branding and SiteGround deployment`. La rama de trabajo actual es `feature/editor-core`; no se debe sobrescribir `main` ni forzar un push.
+El último comprobador necesita `fontTools` y Pillow con RAQM solo en desarrollo. Nunca añadir `.env`, `data/` ni claves SSH. Los cambios de hosting y actualizaciones están en `feature/siteground-growbig`; integrarlos mediante Git conservando la historia, sin forzar un push.
 
 Después del commit, crear el paquete:
 
@@ -34,7 +34,7 @@ Después del commit, crear el paquete:
 sh scripts/package-siteground.sh ../releases
 ```
 
-La herramienta vuelve a compilar, instala Composer sin dependencias de desarrollo en un directorio temporal y comprueba el contenido real. Requiere haber instalado las dependencias de Node (`npm ci`). No modifica el `vendor` de trabajo. Para ensayar antes del commit admite `--candidate`; ese archivo queda expresamente identificado como candidato, no como el contenido exacto de un commit. Se generan un `.tar.gz`, su SHA256, `BUILD-INFO.json` y un inventario de hashes de los archivos.
+La herramienta vuelve a compilar, instala Composer sin dependencias de desarrollo en un directorio temporal y comprueba el contenido real. Requiere haber instalado las dependencias de Node (`npm ci`). No modifica el `vendor` de trabajo. Para ensayar antes del commit admite `--candidate`; ese archivo queda expresamente identificado como candidato. Se generan un `.tar.gz` para la instalación inicial y un `.zip` para el actualizador, cada uno con su SHA256, `BUILD-INFO.json` y un inventario de hashes.
 
 Publicar la rama en el repositorio privado desde el Mac, con su acceso SSH ya configurado. Crear una etiqueta de release únicamente después de la prueba en SiteGround. La primera instalación debe usar una base nueva: una migración de los datos y certificados de Alpine requiere conservar sus claves originales y un procedimiento aparte.
 
@@ -120,6 +120,8 @@ La migración de documentos usa `DEFAULT ('')` para las columnas LONGTEXT: MySQL
 Estas pruebas deben completarse en SiteGround antes de etiquetar el commit como probado en ese proveedor. La comprobación local del paquete no mide su capacidad con usuarios simultáneos.
 
 ## Actualizaciones y vuelta atrás
+
+Para las actualizaciones semiautomáticas desde el repositorio privado, seguir [UPDATES.md](UPDATES.md). Incluye GitHub Actions, instalación inicial del actualizador, configuración privada, protección de la demo y los comandos para SiteGround y Alpine. Una vez configurado, `php deploy/update-siteground.php update` reemplaza el procedimiento manual siguiente.
 
 Crear una copia verificable de la base de datos, del núcleo, de `public_html`, de las imágenes privadas y de `.env` antes de actualizar. Comprobar que el backup cubre también la carpeta hermana `inkgroove/`, no solo la web pública. Guardar el paquete previo, su hash y `BUILD-INFO.json`.
 
