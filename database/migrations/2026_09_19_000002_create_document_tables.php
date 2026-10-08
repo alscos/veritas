@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
@@ -11,8 +12,8 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->string('title', 180)->default('Documento sin título');
-            $table->longText('content_html')->default('');
-            $table->longText('content_text')->default('');
+            $table->longText('content_html')->default(new Expression("('')"));
+            $table->longText('content_text')->default(new Expression("('')"));
             $table->unsignedInteger('word_count')->default(0);
             $table->string('status', 24)->default('draft')->index();
             $table->timestamp('last_session_at')->nullable();

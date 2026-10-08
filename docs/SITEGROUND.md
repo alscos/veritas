@@ -99,6 +99,8 @@ php artisan inkgroove:preflight
 
 Si `php` es anterior a 8.3, usar en todas las órdenes el ejecutable PHP 8.3+ indicado por SiteGround. El comprobador revisa CLI, extensiones, configuración, rutas, recursos compilados, claves, UTF-8, conexión y tamaño estimado de MySQL; no muestra secretos. No sustituye las pruebas del PHP web, SSL, permisos y caché reales.
 
+La migración de documentos usa `DEFAULT ('')` para las columnas LONGTEXT: MySQL 8.0.13+ exige una expresión entre paréntesis incluso para el valor vacío. Si una instalación con el paquete anterior falla con el error 1101 al crear `documents`, sustituir `database/migrations/2026_09_19_000002_create_document_tables.php` por la versión corregida y volver a ejecutar `php artisan migrate --force`. Laravel conserva la migración de identidad ya completada y continúa con las pendientes. No regenerar claves ni usar `migrate:fresh` para este error.
+
 7. Vaciar una vez **Speed → Caching → Dynamic Cache → Flush Cache** y la CDN si está activada. Verificar que la caché de páginas no almacena las respuestas de la aplicación. Los recursos estáticos pueden conservar su caché.
 8. Visitar `https://DOMINIO/up` y después el inicio. Revisar los errores de Laravel en `inkgroove/storage/logs/laravel-AAAA-MM-DD.log`, que no debe ser accesible por HTTP. No dejar un `phpinfo()` público.
 

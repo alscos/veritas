@@ -41,6 +41,22 @@ class EditorWorkspaceTest extends TestCase
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lZkAAAAASUVORK5CYII='));
         return new UploadedFile($path, 'prueba.png', 'image/png', null, true);
     }
+    public function test_empty_documents_return_empty_strings_and_reopen_without_placeholder_text(): void
+    {
+        $this->actingAs($this->user());
+        $document = $this->postJson('/api/documents', ['title' => 'Vacío'])->assertCreated()->json('document');
+        $this->assertSame('', $document['content_html']);
+        $this->assertSame('', $document['content_text']);
+        $this->assertSame(0, $document['word_count']);
+        $this->assertSame('draft', $document['status']);
+        $this->getJson('/api/documents/'.$document['id'])->assertOk()
+            ->assertJsonPath('document.content_html', '')
+            ->assertJsonPath('document.content_text', '')
+            ->assertJsonPath('document.word_count', 0);
+        $this->assertDatabaseHas('documents', [
+            'id' => $document['id'], 'content_html' => '', 'content_text' => '', 'word_count' => 0,
+        ]);
+    }
     public function test_folder_ownership_and_deleting_a_folder_preserves_documents(): void
     {
         $owner = $this->user(); $other = $this->user('Otra persona');
