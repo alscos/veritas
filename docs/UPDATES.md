@@ -150,6 +150,6 @@ No se restaura SQL, no se ejecuta `migrate:rollback` y no se borran documentos a
 
 ## Validación de esta entrega
 
-Probados localmente: 20 pruebas de frontend, 24 pruebas PHP (134 aserciones) y cinco recorridos de Alpine con Docker simulado. Cubren claves e imágenes conservadas, protección intacta, validación de ZIP, descargas sin filtrar tokens, backup fallido, migración fallida y repetición de versión. El ensayo de empaquetado verifica los ZIP reales. El primer workflow y la primera actualización de cada servidor se validan al activarlos; no se afirma que esos recorridos remotos se hayan ejecutado aquí.
+Probados localmente: 20 pruebas de frontend, pruebas PHP de producto y despliegue y cinco recorridos de Alpine con Docker simulado. Cubren claves e imágenes conservadas, protección intacta, validación de ZIP, descargas sin filtrar tokens, backup fallido, migración fallida y repetición de versión. El ensayo de empaquetado verifica los ZIP reales. El primer workflow y la primera actualización de cada servidor se validan al activarlos; no se afirma que esos recorridos remotos se hayan ejecutado aquí.
 
 Referencias: [URLs protegidas de SiteGround](https://es.siteground.com/kb/proteger-contrasena-url), [descargar releases privadas](https://docs.github.com/en/rest/releases/assets).

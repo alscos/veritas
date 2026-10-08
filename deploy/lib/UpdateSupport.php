@@ -40,16 +40,17 @@ final class UpdateSupport
         self::write($path, json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
     }
 
-    public static function copyTree(string $source, string $target): void
+    public static function copyTree(string $source, string $target, bool $public = false): void
     {
         if (is_link($source) || is_link($target)) throw new RuntimeException('No se copian enlaces simbólicos.');
         if (is_dir($source)) {
-            if (!is_dir($target) && !mkdir($target, 0750, true)) throw new RuntimeException('No se pudo crear un directorio.');
+            if (!is_dir($target) && !mkdir($target, $public ? 0755 : 0750, true)) throw new RuntimeException('No se pudo crear un directorio.');
+            if ($public) chmod($target, 0755);
             foreach (new \DirectoryIterator($source) as $entry) {
-                if (!$entry->isDot()) self::copyTree($entry->getPathname(), $target.'/'.$entry->getFilename());
+                if (!$entry->isDot()) self::copyTree($entry->getPathname(), $target.'/'.$entry->getFilename(), $public);
             }
         } else {
-            self::write($target, (string) file_get_contents($source), fileperms($source) & 0777);
+            self::write($target, (string) file_get_contents($source), $public ? 0644 : fileperms($source) & 0777);
         }
     }
 
@@ -74,7 +75,8 @@ final class UpdateSupport
     public static function allowedFile(string $path, string $profile): bool
     {
         if (!self::safePath($path)) return false;
-        if (preg_match('~(^|/)(\.git|node_modules|data)(/|$)|\.(sql|sqlite(?:-.*)?|log)$~', $path)) return false;
+        if (preg_match('~(^|/)(\.git|node_modules)(/|$)|\.(sql|sqlite(?:-.*)?|log)$~', $path)
+            || str_starts_with($path, 'data/') || str_starts_with($path, 'inkgroove/data/')) return false;
         if (preg_match('~(^|/)\.env[^/]*$~', $path) && $path !== '.env.example') return false;
         if ($profile === 'siteground') {
             return str_starts_with($path, 'inkgroove/')

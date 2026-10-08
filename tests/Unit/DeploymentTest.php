@@ -130,6 +130,13 @@ final class DeploymentTest extends TestCase
         UpdateSupport::extract($archive, hash_file('sha256', $archive), $this->directory.'/stage', 'siteground');
     }
 
+    public function test_library_data_is_allowed_but_persistent_app_data_is_excluded(): void
+    {
+        $this->assertTrue(UpdateSupport::allowedFile('inkgroove/vendor/voku/portable-ascii/src/voku/helper/data/x005.php', 'siteground'));
+        $this->assertFalse(UpdateSupport::allowedFile('inkgroove/data/app/images/private.png', 'siteground'));
+        $this->assertFalse(UpdateSupport::allowedFile('data/app/veritas.env', 'alpine'));
+    }
+
     public function test_wrong_profile_is_rejected_and_stage_removed(): void
     {
         $archive = $this->package();
@@ -168,6 +175,7 @@ final class DeploymentTest extends TestCase
         $this->assertSame('TLS challenge', file_get_contents($root.'/public_html/.well-known/acme-challenge/token'));
         $this->assertFileExists($root.'/public_html/build/assets/VeritasEditor-oldhash.js');
         $this->assertFileExists($root.'/public_html/build/assets/app-newhash.js');
+        $this->assertSame(0755, fileperms($root.'/public_html/build/assets') & 0777);
         $this->assertFileDoesNotExist($root.'/inkgroove/storage/framework/down');
         $state = UpdateSupport::json($root.'/.inkgroove-updates/installed.json');
         $this->assertSame($this->revision, $state['revision']);

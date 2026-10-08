@@ -74,8 +74,8 @@ final class SiteGroundUpdater
                 throw new RuntimeException('No se pudo activar el nuevo núcleo.');
             }
             $activated = true;
-            UpdateSupport::copyTree($work.'/public_html/build', $this->public.'/build'); // Keep previous hashed chunks.
-            foreach (['index.php', 'favicon.svg'] as $file) UpdateSupport::copyTree($work.'/public_html/'.$file, $this->public.'/'.$file);
+            UpdateSupport::copyTree($work.'/public_html/build', $this->public.'/build', true); // Keep previous hashed chunks.
+            foreach (['index.php', 'favicon.svg'] as $file) UpdateSupport::copyTree($work.'/public_html/'.$file, $this->public.'/'.$file, true);
             UpdateSupport::write($this->public.'/.htaccess', $htaccess, 0644);
             $migrationStarted = true;
             $artisan($this->core, ['migrate', '--force']);
@@ -103,7 +103,7 @@ final class SiteGroundUpdater
                 // A post-activation check failed: close the application again.
                 try { $artisan($this->core, ['down', '--retry=60']); $maintenance = true; } catch (\Throwable) {}
             }
-            throw new RuntimeException($error->getMessage().($maintenance ? '\nLa aplicación sigue en mantenimiento. No se revierte la base de datos automáticamente. Copia: '.$backup : ''), previous: $error);
+            throw new RuntimeException($error->getMessage().($maintenance ? "\nLa aplicación sigue en mantenimiento. No se revierte la base de datos automáticamente. Copia: ".$backup : ''), previous: $error);
         } finally {
             UpdateSupport::removeTree($work);
             flock($lock, LOCK_UN);
