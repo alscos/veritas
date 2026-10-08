@@ -4,6 +4,8 @@ import type { Certificate, DocumentFolder, DocumentVersion, PageSettings, Submis
 import type { EditorMutation, VeritasEditorHandle } from "./VeritasEditor";
 import DocumentsWorkspace from "./DocumentsWorkspace";
 import { DEFAULT_PAGE } from "./pageLayout";
+import brandLogo from "../brand/InkGroove-logo-tinta-naranja.svg";
+import brandLogoLight from "../brand/InkGroove-logo-tinta-claro.svg";
 
 const VeritasEditor = lazy(() => import("./VeritasEditor"));
 
@@ -32,8 +34,8 @@ const demoDocuments: VeritasDocument[] = [
   {
     id: "a4fe45d1-6420-4e9f-b730-429d7372eefe", owner_id: 1,
     title: "La fotografía: documento e interpretación",
-    content_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p><p><mark data-origin=\"paste\">Una imagen también puede llegar al texto desde una fuente externa.</mark> <mark data-origin=\"paste-edited\">Cuando ese material se revisa, Veritas conserva su procedencia y registra la reelaboración.</mark></p><p>El valor de la imagen no reside solo en aquello que muestra, sino también en la mirada que la construye.</p>",
-    content_text: "La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible. Una imagen también puede llegar al texto desde una fuente externa. Cuando ese material se revisa, Veritas conserva su procedencia y registra la reelaboración. El valor de la imagen no reside solo en aquello que muestra, sino también en la mirada que la construye.",
+    content_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p><p><mark data-origin=\"paste\">Una imagen también puede llegar al texto desde una fuente externa.</mark> <mark data-origin=\"paste-edited\">Cuando ese material se revisa, InkGroove conserva su procedencia y registra la reelaboración.</mark></p><p>El valor de la imagen no reside solo en aquello que muestra, sino también en la mirada que la construye.</p>",
+    content_text: "La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible. Una imagen también puede llegar al texto desde una fuente externa. Cuando ese material se revisa, InkGroove conserva su procedencia y registra la reelaboración. El valor de la imagen no reside solo en aquello que muestra, sino también en la mirada que la construye.",
     word_count: 64, status: "draft", created_at: iso(-240), updated_at: iso(-8), last_session_at: iso(-8), versions_count: 1, sessions_count: 3,
     versions: [],
   },
@@ -51,7 +53,7 @@ const demoEvents: WritingEvent[] = [
   { sequence: 2, event_type: "insert", input_type: "insertText", after_html: "<p>La fotografía mantiene una relación ambigua con la realidad.</p>", elapsed_ms: 8_000 },
   { sequence: 3, event_type: "insert", input_type: "insertText", after_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p>", elapsed_ms: 21_000 },
   { sequence: 4, event_type: "paste", input_type: "insertFromPaste", data: "Una imagen también puede llegar al texto desde una fuente externa.", after_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p><p><mark data-origin=\"paste\">Una imagen también puede llegar al texto desde una fuente externa.</mark></p>", elapsed_ms: 35_000 },
-  { sequence: 5, event_type: "paste_edit", input_type: "insertText", after_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p><p><mark data-origin=\"paste\">Una imagen también puede llegar al texto desde una fuente externa.</mark> <mark data-origin=\"paste-edited\">Cuando ese material se revisa, Veritas conserva su procedencia y registra la reelaboración.</mark></p>", elapsed_ms: 58_000 },
+  { sequence: 5, event_type: "paste_edit", input_type: "insertText", after_html: "<p>La fotografía mantiene una relación ambigua con la realidad. Su apariencia documental no elimina las decisiones de quien encuadra, selecciona y ordena lo visible.</p><p><mark data-origin=\"paste\">Una imagen también puede llegar al texto desde una fuente externa.</mark> <mark data-origin=\"paste-edited\">Cuando ese material se revisa, InkGroove conserva su procedencia y registra la reelaboración.</mark></p>", elapsed_ms: 58_000 },
   { sequence: 6, event_type: "insert", input_type: "insertText", after_html: demoDocuments[0].content_html, elapsed_ms: 79_000 },
 ];
 
@@ -156,8 +158,8 @@ const makeId = () => {
 const shortDate = (value: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 const duration = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1_000)); const hours = Math.floor(seconds / 3_600); const minutes = Math.floor(seconds / 60) % 60; const rest = seconds % 60; return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${minutes}:${String(rest).padStart(2, "0")}`; };
 
-function Logo() {
-  return <div className="brand"><span className="brand-mark" aria-hidden="true">V</span><span>Veritas</span></div>;
+function Logo({ inverted = false }: { inverted?: boolean }) {
+  return <div className="brand"><img className="brand-logo" src={inverted ? brandLogoLight : brandLogo} alt="InkGroove" width={1835.51} height={500} /></div>;
 }
 
 function AuthScreen({ onAuthenticated, notice }: { onAuthenticated: (user: User) => void; notice?: string }) {
@@ -171,16 +173,16 @@ function AuthScreen({ onAuthenticated, notice }: { onAuthenticated: (user: User)
       const payload = Object.fromEntries(form.entries());
       const result = await api<{ user: User }>(`/auth/${mode}`, { method: "POST", body: JSON.stringify(payload) });
       onAuthenticated(result.user);
-    } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo conectar con Veritas."); }
+    } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo conectar con InkGroove."); }
     finally { setBusy(false); }
   };
   return <main className="auth-shell">
     <section className="auth-story">
-      <Logo />
+      <Logo inverted />
       <div>
         <p className="eyebrow">Escritura con memoria</p>
         <h1>Un documento puede contar también cómo llegó a existir.</h1>
-        <p>Veritas conserva el proceso de escritura, permite sellar versiones y compartir evidencias verificables sin convertirlas en una acusación automática.</p>
+        <p>InkGroove conserva el proceso de escritura, permite sellar versiones y compartir evidencias verificables sin convertirlas en una acusación automática.</p>
       </div>
       <p className="auth-foot">La autoría se argumenta con evidencias, no con una puntuación opaca.</p>
     </section>
@@ -422,7 +424,7 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}
     </aside>
-    {showSeal && <Modal title="Sellar esta versión" onClose={() => setShowSeal(false)}><p>Se creará una copia inmutable del texto y de la cadena de eventos recibida por Veritas. Podrás seguir trabajando y sellar versiones posteriores.</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>palabras</span><strong>{events.length}</strong><span>eventos</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>Cancelar</button><button className="primary" onClick={() => void seal()}>Certificar versión</button></div></Modal>}
+    {showSeal && <Modal title="Sellar esta versión" onClose={() => setShowSeal(false)}><p>Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>palabras</span><strong>{events.length}</strong><span>eventos</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>Cancelar</button><button className="primary" onClick={() => void seal()}>Certificar versión</button></div></Modal>}
     {showSend && certificate && <SendModal certificate={certificate} demo={demo} documentState={documentState} onClose={() => setShowSend(false)} />}
   </main>;
 }

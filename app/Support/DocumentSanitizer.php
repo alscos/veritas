@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 final class DocumentSanitizer
 {
     private const TAGS = ['P', 'DIV', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'SUB', 'SUP', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'MARK', 'SPAN', 'A', 'IMG', 'HR', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD'];
-    private const FONTS = ['serif', 'sans', 'mono', 'georgia', 'times', 'garamond', 'arial', 'verdana', 'courier'];
+    private const FONTS = ['serif', 'sans', 'mono', 'georgia', 'selectric', 'times', 'garamond', 'arial', 'verdana', 'courier'];
     private const SIZES = ['small', 'normal', 'large', 'x-large', '8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '72'];
     private const IMAGE_URL = '~^/api/documents/([a-f0-9-]{36})/images/([a-f0-9-]{36})$~D';
 
@@ -78,6 +78,7 @@ final class DocumentSanitizer
                     'mono', 'courier' => '"Courier New", monospace',
                     'times' => '"Times New Roman", Times, serif',
                     'garamond' => 'Garamond, "EB Garamond", Georgia, serif',
+                    'selectric' => '"InkGroove Type Clean", Georgia, serif',
                     'verdana' => 'Verdana, sans-serif',
                     default => null,
                 };

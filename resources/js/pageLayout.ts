@@ -19,6 +19,7 @@ export const FONT_FAMILIES: Record<string, { label: string; css: string; export:
   sans: { label: "Sans serif", css: 'Arial, Helvetica, sans-serif', export: "Arial" },
   mono: { label: "Monoespaciada", css: '"Courier New", monospace', export: "Courier New" },
   georgia: { label: "Georgia", css: 'Georgia, serif', export: "Georgia" },
+  selectric: { label: "Selectric Clean · ES", css: '"InkGroove Type Clean", Georgia, serif', export: "InkGroove Type Clean" },
   times: { label: "Times New Roman", css: '"Times New Roman", Times, serif', export: "Times New Roman" },
   garamond: { label: "Garamond", css: 'Garamond, "EB Garamond", Georgia, serif', export: "Garamond" },
   arial: { label: "Arial", css: 'Arial, Helvetica, sans-serif', export: "Arial" },

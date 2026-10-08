@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'public_path' => env('INKGROOVE_PUBLIC_PATH'),
     'signing_key' => env('VERITAS_SIGNING_KEY') ?: env('APP_KEY'),
     'max_document_bytes' => 500_000,
     'max_event_batch' => 250,

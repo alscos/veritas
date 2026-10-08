@@ -3,6 +3,8 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use App\Http\Middleware\PrivateResponseHeaders;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -12,7 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        $middleware->prepend(PrivateResponseHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Laravel renders validation and authorization failures as JSON for API requests.
+        $exceptions->respond(fn (Response $response) => PrivateResponseHeaders::apply($response));
     })->create();

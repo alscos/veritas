@@ -1,5 +1,9 @@
 # Instalación
 
+## SiteGround GrowBig
+
+Para el perfil de hosting compartido, el paquete compilado y los pasos de instalación y validación, ver [docs/SITEGROUND.md](docs/SITEGROUND.md). El núcleo de Laravel se mantiene fuera de `public_html`.
+
 ## Docker sobre Epheso/Alpine
 
 El sistema operativo anfitrión puede ser Alpine Linux. Las imágenes de Veritas encapsulan Apache, PHP y MariaDB; no es necesario que la imagen de aplicación utilice la misma distribución que el anfitrión.

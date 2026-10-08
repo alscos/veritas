@@ -53,7 +53,7 @@ async function request<T>(path: string, options: RequestInit, allowCsrfRetry: bo
     throw new ApiError(message, 401);
   }
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) throw new ApiError("La API de Veritas no está disponible.", response.status);
+  if (!contentType.includes("application/json")) throw new ApiError("La API de InkGroove no está disponible.", response.status);
   const payload = await response.json() as { message?: string; errors?: Record<string, string[]> } & T;
   if (!response.ok) throw new ApiError(payload.message ?? "No se pudo completar la operación.", response.status, payload.errors);
   return payload;

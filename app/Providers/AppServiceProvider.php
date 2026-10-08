@@ -13,6 +13,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if ($path = config('veritas.public_path')) {
+            $this->app->usePublicPath($path);
+        }
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)->by((string) ($request->user()?->id ?? $request->ip())));
     }
 }
