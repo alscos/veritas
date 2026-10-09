@@ -261,6 +261,19 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 @keyframes loading { 50%,100% { transform: translateX(100%); } }
 
 /* Editorial workspace */
+.auth-story-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.language-switcher { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font: 600 .7rem/1.3 Arial, sans-serif; }
+.language-switcher button { padding: 8px 5px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: inherit; opacity: .65; cursor: pointer; }
+.language-switcher button[aria-pressed="true"] { opacity: 1; border-bottom-color: currentColor; }
+.language-switcher button:hover { opacity: 1; }
+.language-switcher button:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; }
+.language-switcher > span { opacity: .4; }
+.auth-story .entry-story h1 { margin: 24px 0 30px; font-size: clamp(1.85rem, 3.1vw, 3.1rem); line-height: 1.25; letter-spacing: -.025em; }
+.auth-story .entry-story p { font: 400 clamp(1rem, 1.3vw, 1.25rem)/1.65 var(--display-font); color: #d0ded8; max-width: 650px; }
+.entry-story s { color: #efa589; text-decoration-thickness: .075em; text-decoration-color: #ffb59d; }
+.auth-story .entry-story .entry-signoff { margin-top: 26px; color: #fff; }
+.auth-story .eyebrow { margin-top: 32px; }
+.auth-story .auth-foot { margin-top: 36px; max-width: 650px; line-height: 1.6; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .archive-grid { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 34px; }
 .folder-sidebar { padding: 14px 0; }
@@ -357,7 +370,7 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .page-furniture { display: contents; }
 .page-flow-gap { display: block; width: 100%; float: left; pointer-events: none; user-select: none; }
 .manual-page-break { position: relative; width: 100%; margin: 0; padding: 0; }
-.manual-page-break::before { content: "Salto de página"; display: block; position: absolute; top: 4px; width: 100%; border-top: 1px dashed #c5d4c6; padding-top: 7px; color: #91a394; font: 9px Arial, sans-serif; text-align: center; }
+.manual-page-break::before { content: var(--page-break-label, "Salto de página"); display: block; position: absolute; top: 4px; width: 100%; border-top: 1px dashed #c5d4c6; padding-top: 7px; color: #91a394; font: 9px Arial, sans-serif; text-align: center; }
 .ProseMirror-selectednode.manual-page-break { outline: 1px dashed #7d9e87; }
 .page-status { display: flex; justify-content: space-between; align-items: center; font-size: .66rem; color: #899589; padding: 0 3px 10px; }
 .page-status small { display: flex; align-items: center; gap: 6px; font-size: .62rem; }

@@ -40,7 +40,7 @@ class AuthController
     {
         $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
         if (!Auth::attempt(['email' => mb_strtolower($credentials['email']), 'password' => $credentials['password']], false)) {
-            return response()->json(['message' => 'Las credenciales no son correctas.'], 422);
+            return response()->json(['message' => __('inkgroove.credentials')], 422);
         }
         $request->session()->regenerate();
         return response()->json(['user' => $request->user()]);

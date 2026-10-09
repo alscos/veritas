@@ -46,9 +46,9 @@ class EventController
             $lastHash = $session->last_hash;
             $accepted = 0;
             foreach ($data['events'] as $event) {
-                if (!in_array($event['event_type'], self::TYPES, true)) abort(422, 'Tipo de evento no válido.');
+                if (!in_array($event['event_type'], self::TYPES, true)) abort(422, __('inkgroove.event_type'));
                 if ($event['sequence'] <= $lastSequence) continue;
-                if ($event['sequence'] !== $lastSequence + 1) abort(409, 'La secuencia de eventos está incompleta.');
+                if ($event['sequence'] !== $lastSequence + 1) abort(409, __('inkgroove.event_sequence'));
                 $afterHtml = DocumentSanitizer::html((string) ($event['after_html'] ?? ''));
                 DocumentSanitizer::validateImages($afterHtml, $document->id);
                 $canonical = json_encode([

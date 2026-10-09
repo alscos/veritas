@@ -44,6 +44,10 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: npm ci
       - run: npm test
+      - name: Install Chromium for editor regressions
+        run: npx playwright install --with-deps chromium
+      - name: Check native composition and bilingual editor
+        run: npm run test:browser
       - run: php vendor/bin/phpunit
       - run: python3 -m unittest discover -s tests/deployment -v
       - name: Verify migrations and empty documents on real MySQL

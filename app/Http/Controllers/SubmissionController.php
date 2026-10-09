@@ -28,7 +28,7 @@ class SubmissionController
         $version = DocumentVersion::query()->with('document')->findOrFail($data['document_version_id']);
         abort_unless($version->document->owner_id === $request->user()->id, 404);
         $recipient = isset($data['recipient_email']) ? User::query()->where('email', mb_strtolower($data['recipient_email']))->first() : null;
-        abort_if($recipient?->id === $request->user()->id, 422, 'No puedes entregarte un documento a ti mismo.');
+        abort_if($recipient?->id === $request->user()->id, 422, __('inkgroove.self_submission'));
         $submission = Submission::create([
             'document_version_id' => $version->id,
             'sender_id' => $request->user()->id,

@@ -40,6 +40,8 @@ La licencia y los créditos originales (IBM, Jens Kutilek) se conservan en los m
 
 ## Regenerar los recursos
 
+El acceso incorpora el [texto con cicatrices y su versión inglesa](I18N.md), con tres tachados visibles. El selector ES/EN traduce la interfaz y conserva el contenido del autor. Los nuevos estilos de la entrada se revisaron en escritorio y móvil sin regenerar fuentes ni vectores.
+
 El servidor no necesita herramientas tipográficas. Los TTF, WOFF y SVG generados ya se incluyen. Para regenerarlos durante el desarrollo se necesita Python con `fontTools`; para verificar el renderizado, también `Pillow` con RAQM:
 
 ```sh

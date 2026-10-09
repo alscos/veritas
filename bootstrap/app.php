@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\PrivateResponseHeaders;
+use App\Http\Middleware\SetLocale;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -15,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->prepend(PrivateResponseHeaders::class);
+        $middleware->append(SetLocale::class);
+        $middleware->encryptCookies(except: ['inkgroove_locale']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->respond(fn (Response $response) => PrivateResponseHeaders::apply($response));

@@ -45,7 +45,7 @@ mkdir -p "$CORE" "$PUBLIC"
 cd "$ROOT"
 # Run npm ci and the tests before packaging a release (see docs/SITEGROUND.md).
 npm run build
-for directory in app bootstrap config routes; do cp -R "$ROOT/$directory" "$CORE/$directory"; done
+for directory in app bootstrap config routes lang; do cp -R "$ROOT/$directory" "$CORE/$directory"; done
 rm -f "$CORE"/bootstrap/cache/*.php
 mkdir -p "$CORE/database" "$CORE/resources" "$CORE/deploy"
 for directory in migrations seeders; do

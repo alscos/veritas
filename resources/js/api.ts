@@ -1,3 +1,4 @@
+import { t, getLocale } from "./i18n";
 const csrf = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "";
 const SESSION_EXPIRED_EVENT = "veritas:session-expired";
 
@@ -34,6 +35,7 @@ async function request<T>(path: string, options: RequestInit, allowCsrfRetry: bo
     ...options,
     headers: {
       Accept: "application/json",
+      "Accept-Language": getLocale(),
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       "X-CSRF-TOKEN": csrf(),
       ...(options.headers ?? {}),
@@ -43,19 +45,19 @@ async function request<T>(path: string, options: RequestInit, allowCsrfRetry: bo
     return request<T>(path, options, false);
   }
   if (response.status === 419) {
-    const message = "Tu sesión ha caducado. Vuelve a identificarte para continuar.";
+    const message = t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
     notifySessionExpired(message);
     throw new ApiError(message, 419);
   }
   if (response.status === 401) {
-    const message = "Debes volver a identificarte para continuar.";
+    const message = t("Debes volver a identificarte para continuar.");
     if (path !== "/me") notifySessionExpired(message);
     throw new ApiError(message, 401);
   }
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) throw new ApiError("La API de InkGroove no está disponible.", response.status);
+  if (!contentType.includes("application/json")) throw new ApiError(t("La API de InkGroove no está disponible."), response.status);
   const payload = await response.json() as { message?: string; errors?: Record<string, string[]> } & T;
-  if (!response.ok) throw new ApiError(payload.message ?? "No se pudo completar la operación.", response.status, payload.errors);
+  if (!response.ok) throw new ApiError(Object.values(payload.errors ?? {}).flat()[0] ?? payload.message ?? t("No se pudo completar la operación."), response.status, payload.errors);
   return payload;
 }
 

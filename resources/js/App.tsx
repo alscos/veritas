@@ -1,3 +1,6 @@
+import { t, getLocale, useLocale } from "./i18n";
+import LanguageSwitcher from "./LanguageSwitcher";
+import EntryStory from "./EntryStory";
 import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
 import type { Certificate, DocumentFolder, DocumentVersion, PageSettings, Submission, User, VeritasDocument, WritingEvent } from "./types";
@@ -155,7 +158,6 @@ const makeId = () => {
   const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0"));
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 };
-const shortDate = (value: string) => new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 const duration = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1_000)); const hours = Math.floor(seconds / 3_600); const minutes = Math.floor(seconds / 60) % 60; const rest = seconds % 60; return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${minutes}:${String(rest).padStart(2, "0")}`; };
 
 function Logo({ inverted = false }: { inverted?: boolean }) {
@@ -173,34 +175,33 @@ function AuthScreen({ onAuthenticated, notice }: { onAuthenticated: (user: User)
       const payload = Object.fromEntries(form.entries());
       const result = await api<{ user: User }>(`/auth/${mode}`, { method: "POST", body: JSON.stringify(payload) });
       onAuthenticated(result.user);
-    } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo conectar con InkGroove."); }
+    } catch (reason) { setError(reason instanceof ApiError ? reason.message : t("No se pudo conectar con InkGroove.")); }
     finally { setBusy(false); }
   };
   return <main className="auth-shell">
     <section className="auth-story">
-      <Logo inverted />
+      <header className="auth-story-header"><Logo inverted /><LanguageSwitcher /></header>
       <div>
-        <p className="eyebrow">Escritura con memoria</p>
-        <h1>Un documento puede contar también cómo llegó a existir.</h1>
-        <p>InkGroove conserva el proceso de escritura, permite sellar versiones y compartir evidencias verificables sin convertirlas en una acusación automática.</p>
+        <p className="eyebrow">{t("Escritura con memoria")}</p>
+        <EntryStory />
       </div>
-      <p className="auth-foot">La autoría se argumenta con evidencias, no con una puntuación opaca.</p>
+      <p className="auth-foot">{t("Conserva el proceso de escritura, vuelve sobre tus borradores y comparte las versiones que tú elijas.")}</p>
     </section>
     <section className="auth-panel">
       <div className="auth-card">
-        <p className="eyebrow">{mode === "login" ? "Acceso" : "Crear una cuenta"}</p>
-        <h2>{mode === "login" ? "Vuelve a tus documentos" : "Empieza tu archivo personal"}</h2>
+        <p className="eyebrow">{mode === "login" ? t("Acceso") : t("Crear una cuenta")}</p>
+        <h2>{mode === "login" ? t("Vuelve a tus documentos") : t("Empieza tu archivo personal")}</h2>
         {notice && <p className="auth-notice" role="status">{notice}</p>}
         <form onSubmit={submit}>
-          {mode === "register" && <label>Nombre<input name="name" autoComplete="name" required /></label>}
-          <label>Correo electrónico<input name="email" type="email" autoComplete="email" required /></label>
-          <label>Contraseña<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={10} required /></label>
-          {mode === "register" && <label>Repite la contraseña<input name="password_confirmation" type="password" autoComplete="new-password" minLength={10} required /></label>}
+          {mode === "register" && <label>{t("Nombre")}<input name="name" autoComplete="name" required /></label>}
+          <label>{t("Correo electrónico")}<input name="email" type="email" autoComplete="email" required /></label>
+          <label>{t("Contraseña")}<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={10} required /></label>
+          {mode === "register" && <label>{t("Repite la contraseña")}<input name="password_confirmation" type="password" autoComplete="new-password" minLength={10} required /></label>}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button className="primary full" disabled={busy}>{busy ? "Un momento…" : mode === "login" ? "Entrar" : "Crear cuenta"}</button>
+          <button className="primary full" disabled={busy}>{busy ? t("Un momento…") : mode === "login" ? t("Entrar") : t("Crear cuenta")}</button>
         </form>
         <button className="text-button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
-          {mode === "login" ? "No tengo cuenta" : "Ya tengo una cuenta"}
+          {mode === "login" ? t("No tengo cuenta") : t("Ya tengo una cuenta")}
         </button>
       </div>
     </section>
@@ -211,13 +212,13 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
   return <div className="app-shell">
     <header className="topbar">
       <Logo />
-      <nav aria-label="Principal">
-        <button className={view === "documents" || view === "editor" || view === "timeline" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("documents")}>Documentos</button>
-        <button className={view === "submissions" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("submissions")}>Entregas</button>
+      <nav aria-label={t("Principal")}>
+        <button className={view === "documents" || view === "editor" || view === "timeline" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("documents")}>{t("Documentos")}</button>
+        <button className={view === "submissions" ? "active" : ""} disabled={view === "editor"} onClick={() => setView("submissions")}>{t("Entregas")}</button>
       </nav>
-      <div className="account"><span className="avatar">{user.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</span><span className="account-name">{user.name}</span><button className="icon-button" title={view === "editor" ? "Vuelve primero a tus documentos" : "Cerrar sesión"} disabled={view === "editor"} onClick={onLogout}>↗</button></div>
+      <div className="account"><LanguageSwitcher /><span className="avatar">{user.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</span><span className="account-name">{user.name}</span><button className="icon-button" title={view === "editor" ? t("Vuelve primero a tus documentos") : t("Cerrar sesión")} disabled={view === "editor"} onClick={onLogout}>↗</button></div>
     </header>
-    {demo && <div className="demo-ribbon">Demostración local · datos temporales de esta sesión</div>}
+    {demo && <div className="demo-ribbon">{t("Demostración local · datos temporales de esta sesión")}</div>}
     {children}
   </div>;
 }
@@ -368,7 +369,7 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   const changePage = (next: PageSettings) => { pageRef.current = next; setPage(next); markChanged(); record("format", "pageSettings", JSON.stringify(next)); };
   const uploadImage = async (file: File) => {
     if (demo) {
-      const src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("No se pudo leer la imagen.")); reader.readAsDataURL(file); });
+      const src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error(t("No se pudo leer la imagen."))); reader.readAsDataURL(file); });
       const image = new Image(); image.src = src; await image.decode();
       return { src, width: image.naturalWidth, height: image.naturalHeight };
     }
@@ -402,29 +403,29 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   if (timelineOpen) return <Timeline events={events} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
   return <main className="editor-layout">
     <aside className="document-context">
-      <button className="back-link" onClick={() => void leaveEditor()}>← Mis documentos</button>
-      <p className="eyebrow">Documento propio</p>
-      <h1>{title || "Sin título"}</h1>
-      <dl><div><dt>Estado</dt><dd>Borrador privado</dd></div><div><dt>Extensión</dt><dd>{currentWordCount} palabras</dd></div><div><dt>Versiones</dt><dd>{documentState.versions_count ?? 0} certificadas</dd></div><div><dt>Carpeta</dt><dd><select aria-label="Carpeta del documento" value={folderId ?? ""} onChange={event => { const next = event.target.value || null; folderRef.current = next; setFolderId(next); markChanged(); }}><option value="">Sin carpeta</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></dd></div></dl>
-      <div className="privacy-note"><span>⌁</span><p><strong>Solo tú puedes verlo.</strong><br />El acceso cambia únicamente al entregar una versión.</p></div>
+      <button className="back-link" onClick={() => void leaveEditor()}>{t("← Mis documentos")}</button>
+      <p className="eyebrow">{t("Documento propio")}</p>
+      <h1>{title || t("Sin título")}</h1>
+      <dl><div><dt>{t("Estado")}</dt><dd>{t("Borrador privado")}</dd></div><div><dt>{t("Extensión")}</dt><dd>{currentWordCount} {t("palabras")}</dd></div><div><dt>{t("Versiones")}</dt><dd>{documentState.versions_count ?? 0} {t("certificadas")}</dd></div><div><dt>{t("Carpeta")}</dt><dd><select aria-label={t("Carpeta del documento")} value={folderId ?? ""} onChange={event => { const next = event.target.value || null; folderRef.current = next; setFolderId(next); markChanged(); }}><option value="">{t("Sin carpeta")}</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></dd></div></dl>
+      <div className="privacy-note"><span>⌁</span><p><strong>{t("Solo tú puedes verlo.")}</strong><br />{t("El acceso cambia únicamente al entregar una versión.")}</p></div>
     </aside>
     <section className="writing-surface">
-      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label="Título"/><span>Sesión activa · registro local y servidor</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>Sesión caducada · volver a entrar</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? "Todo guardado" : saveState === "saving" ? "Guardando…" : "Error al guardar"}</span>}</div>
+      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label={t("Título")}/><span>{t("Sesión activa · registro local y servidor")}</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>{t("Sesión caducada · volver a entrar")}</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? t("Todo guardado") : saveState === "saving" ? t("Guardando…") : t("Error al guardar")}</span>}</div>
       <div className="paper">
-        <Suspense fallback={<div className="editor-loading">Preparando el documento…</div>}>
+        <Suspense fallback={<div className="editor-loading">{t("Preparando el documento…")}</div>}>
           <VeritasEditor ref={editorRef} initialHtml={html} title={title} page={page} onPageChange={changePage} beforeExport={save} onUploadImage={uploadImage} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
         </Suspense>
       </div>
-      <div className="editor-actions"><span>{currentWordCount} palabras</span><div><button className="secondary" onClick={() => void save()}>Guardar ahora</button><button className="secondary" onClick={() => void openTimeline()}>Ver proceso</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>Sellar versión</button></div></div>
+      <div className="editor-actions"><span>{currentWordCount} {t("palabras")}</span><div><button className="secondary" onClick={() => void save()}>{t("Guardar ahora")}</button><button className="secondary" onClick={() => void openTimeline()}>{t("Ver proceso")}</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>{t("Sellar versión")}</button></div></div>
     </section>
     <aside className="evidence-panel">
-      <div className="live-title"><span><i></i>Registro en directo</span><small>{events.length} eventos</small></div>
-      <div className="metric-hero"><span>{sessionPpm !== null ? "Ritmo de esta sesión" : previousPpm !== null ? "Último ritmo registrado" : "Ritmo de esta sesión"}</span><strong>{displayedPpm ?? "—"}<em> ppm</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
-      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>Escritura directa<strong>{analysis.direct} palabras</strong></p></li><li><span className="metric-icon pasted">□</span><p>Pegado sin modificar<strong>{pasteWords} palabras</strong></p></li><li><span className="metric-icon revised">↺</span><p>Pegado reelaborado<strong>{editedPasteWords} palabras</strong></p></li><li><span className="metric-icon history">◷</span><p>Tiempo total registrado<strong>{duration(timing.totalMs)}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>Escritura activa estimada<strong>{duration(timing.writingMs)}</strong></p></li><li><span className="metric-icon revised">✎</span><p>Edición activa estimada<strong>{duration(timing.revisionMs)}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>Pausas de al menos 5 s<strong>{timing.pauseCount} · {duration(timing.pauseMs)}</strong></p></li><li><span className="metric-icon away">↗</span><p>Fuera del editor<strong>{duration(timing.awayMs)}</strong></p></li></ul>
-      <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>Abrir la moviola</strong><br />Reconstruye el documento evento a evento.</p></button>
-      {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>Última versión certificada</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>Entregar</button></div>}
+      <div className="live-title"><span><i></i>{t("Registro en directo")}</span><small>{events.length} {t("eventos")}</small></div>
+      <div className="metric-hero"><span>{sessionPpm !== null ? t("Ritmo de esta sesión") : previousPpm !== null ? t("Último ritmo registrado") : t("Ritmo de esta sesión")}</span><strong>{displayedPpm ?? "—"}<em> {t("ppm")}</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
+      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>{t("Escritura directa")}<strong>{analysis.direct} {t("palabras")}</strong></p></li><li><span className="metric-icon pasted">□</span><p>{t("Pegado sin modificar")}<strong>{pasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon revised">↺</span><p>{t("Pegado reelaborado")}<strong>{editedPasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon history">◷</span><p>{t("Tiempo total registrado")}<strong>{duration(timing.totalMs)}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>{t("Escritura activa estimada")}<strong>{duration(timing.writingMs)}</strong></p></li><li><span className="metric-icon revised">✎</span><p>{t("Edición activa estimada")}<strong>{duration(timing.revisionMs)}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>{t("Pausas de al menos 5 s")}<strong>{timing.pauseCount} · {duration(timing.pauseMs)}</strong></p></li><li><span className="metric-icon away">↗</span><p>{t("Fuera del editor")}<strong>{duration(timing.awayMs)}</strong></p></li></ul>
+      <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>{t("Abrir la moviola")}</strong><br />{t("Reconstruye el documento evento a evento.")}</p></button>
+      {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>{t("Última versión certificada")}</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>{t("Entregar")}</button></div>}
     </aside>
-    {showSeal && <Modal title="Sellar esta versión" onClose={() => setShowSeal(false)}><p>Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>palabras</span><strong>{events.length}</strong><span>eventos</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>Cancelar</button><button className="primary" onClick={() => void seal()}>Certificar versión</button></div></Modal>}
+    {showSeal && <Modal title={t("Sellar esta versión")} onClose={() => setShowSeal(false)}><p>{t("Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.")}</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>{t("palabras")}</span><strong>{events.length}</strong><span>{t("eventos")}</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>{t("Cancelar")}</button><button className="primary" onClick={() => void seal()}>{t("Certificar versión")}</button></div></Modal>}
     {showSend && certificate && <SendModal certificate={certificate} demo={demo} documentState={documentState} onClose={() => setShowSend(false)} />}
   </main>;
 }
@@ -433,32 +434,33 @@ function Timeline({ events, title, onClose, index, setIndex }: { events: Writing
   const [playing, setPlaying] = useState(false); const [speed, setSpeed] = useState(4);
   useEffect(() => { if (!playing || index >= events.length - 1) { if (index >= events.length - 1) setPlaying(false); return; } const timer = window.setTimeout(() => setIndex(index + 1), 800 / speed); return () => window.clearTimeout(timer); }, [playing, speed, index, events.length, setIndex]);
   const event = events[index] ?? events[0];
-  const labels: Record<string, string> = { start: "Inicio", insert: "Escritura", delete: "Eliminación", paste: "Pegado", paste_edit: "Reelaboración de pegado", format: "Formato", focus: "Vuelta al editor", blur: "Salida del editor", save: "Guardado" };
+  const labels: Record<string, string> = { start: t("Inicio"), insert: t("Escritura"), delete: t("Eliminación"), paste: t("Pegado"), paste_edit: t("Reelaboración de pegado"), format: t("Formato"), focus: t("Vuelta al editor"), blur: t("Salida del editor"), save: t("Guardado") };
   return <section className="timeline-view">
-    <header><div><button className="back-link" onClick={onClose}>← Volver al documento</button><p className="eyebrow">Proceso de escritura</p><h1>{title}</h1></div><div className="timeline-stat"><strong>{events.length}</strong><span>eventos registrados</span></div></header>
+    <header><div><button className="back-link" onClick={onClose}>{t("← Volver al documento")}</button><p className="eyebrow">{t("Proceso de escritura")}</p><h1>{title}</h1></div><div className="timeline-stat"><strong>{events.length}</strong><span>{t("eventos registrados")}</span></div></header>
     <div className="timeline-grid">
-      <div className="replay-paper"><div className="replay-meta"><span>Evento {index + 1} de {events.length}</span><strong>{labels[event?.event_type] ?? event?.event_type}</strong></div><article dangerouslySetInnerHTML={{ __html: event?.after_html || "<p class='empty-replay'>La sesión comienza aquí.</p>" }} /></div>
-      <aside className="event-rail"><h2>Secuencia</h2><div className="event-list">{events.map((item, eventIndex) => <button key={`${item.sequence}-${eventIndex}`} className={eventIndex === index ? "active" : ""} onClick={() => { setPlaying(false); setIndex(eventIndex); }}><i className={item.event_type}></i><span><strong>{labels[item.event_type] ?? item.event_type}</strong><small>{duration(item.elapsed_ms)}</small></span></button>)}</div></aside>
+      <div className="replay-paper"><div className="replay-meta"><span>{t("Evento {index} de {total}", { index: index + 1, total: events.length })}</span><strong>{labels[event?.event_type] ?? event?.event_type}</strong></div><article dangerouslySetInnerHTML={{ __html: event?.after_html || `<p class="empty-replay">${t("La sesión comienza aquí.")}</p>` }} /></div>
+      <aside className="event-rail"><h2>{t("Secuencia")}</h2><div className="event-list">{events.map((item, eventIndex) => <button key={`${item.sequence}-${eventIndex}`} className={eventIndex === index ? "active" : ""} onClick={() => { setPlaying(false); setIndex(eventIndex); }}><i className={item.event_type}></i><span><strong>{labels[item.event_type] ?? item.event_type}</strong><small>{duration(item.elapsed_ms)}</small></span></button>)}</div></aside>
     </div>
-    <footer className="transport"><button className="play" onClick={() => setPlaying(!playing)}>{playing ? "Ⅱ" : "▶"}</button><input type="range" min="0" max={Math.max(0, events.length - 1)} value={Math.min(index, Math.max(0, events.length - 1))} onChange={event => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posición de la reproducción"/><span>{duration(event?.elapsed_ms ?? 0)}</span><select value={speed} onChange={event => setSpeed(Number(event.target.value))} aria-label="Velocidad"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></footer>
+    <footer className="transport"><button className="play" aria-label={playing ? t("Pausar") : t("Reproducir")} onClick={() => setPlaying(!playing)}>{playing ? "Ⅱ" : "▶"}</button><input type="range" min="0" max={Math.max(0, events.length - 1)} value={Math.min(index, Math.max(0, events.length - 1))} onChange={event => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label={t("Posición de la reproducción")}/><span>{duration(event?.elapsed_ms ?? 0)}</span><select value={speed} onChange={event => setSpeed(Number(event.target.value))} aria-label={t("Velocidad")}><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></footer>
   </section>;
 }
 
 function SendModal({ certificate, documentState, demo, onClose }: { certificate: Certificate; documentState: VeritasDocument; demo: boolean; onClose: () => void }) {
   const [sent, setSent] = useState(false); const [error, setError] = useState("");
-  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { if (!demo) { const version = documentState.versions?.at(-1); if (!version) throw new Error("Falta la versión sellada"); await api('/submissions', { method: 'POST', body: JSON.stringify({ document_version_id: version.id, recipient_email: form.get('email'), note: form.get('note') }) }); } setSent(true); } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo realizar la entrega."); } };
-  return <Modal title={sent ? "Versión entregada" : "Entregar versión certificada"} onClose={onClose}>{sent ? <div className="success-message"><span>✓</span><p><strong>La entrega ha quedado registrada.</strong><br />El destinatario verá esta versión concreta y su proceso, pero no tus borradores posteriores.</p><button className="primary" onClick={onClose}>Cerrar</button></div> : <form onSubmit={submit} className="send-form"><p>Se entregará la versión identificada como <code>{certificate.certificate_code}</code>.</p><label>Correo del profesor o destinatario<input name="email" type="email" required placeholder="profesor@centro.es" /></label><label>Nota opcional<textarea name="note" rows={3} placeholder="Una indicación breve para acompañar la entrega" /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancelar</button><button className="primary">Entregar esta versión</button></div></form>}</Modal>;
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { if (!demo) { const version = documentState.versions?.at(-1); if (!version) throw new Error(t("Falta la versión sellada")); await api('/submissions', { method: 'POST', body: JSON.stringify({ document_version_id: version.id, recipient_email: form.get('email'), note: form.get('note') }) }); } setSent(true); } catch (reason) { setError(reason instanceof Error ? reason.message : t("No se pudo realizar la entrega.")); } };
+  return <Modal title={sent ? t("Versión entregada") : t("Entregar versión certificada")} onClose={onClose}>{sent ? <div className="success-message"><span>✓</span><p><strong>{t("La entrega ha quedado registrada.")}</strong><br />{t("El destinatario verá esta versión concreta y su proceso, pero no tus borradores posteriores.")}</p><button className="primary" onClick={onClose}>{t("Cerrar")}</button></div> : <form onSubmit={submit} className="send-form"><p>{t("Se entregará la versión identificada como")} <code>{certificate.certificate_code}</code>.</p><label>{t("Correo del profesor o destinatario")}<input name="email" type="email" required placeholder={t("profesor@centro.es")} /></label><label>{t("Nota opcional")}<textarea name="note" rows={3} placeholder={t("Una indicación breve para acompañar la entrega")} /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>{t("Cancelar")}</button><button className="primary">{t("Entregar esta versión")}</button></div></form>}</Modal>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><h2 id="modal-title">{title}</h2>{children}</section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label={t("Cerrar")}>×</button><h2 id="modal-title">{title}</h2>{children}</section></div>;
 }
 
 function SubmissionsView({ submissions }: { submissions: Submission[] }) {
-  return <main className="workspace dashboard"><section className="dashboard-head"><div><p className="eyebrow">Versiones compartidas</p><h1>Entregas</h1><p>Una entrega contiene una versión inmutable; tus borradores posteriores permanecen privados.</p></div></section><section className="empty-state"><span>↗</span><h2>{submissions.length ? `${submissions.length} entregas registradas` : "Todavía no has realizado ninguna entrega"}</h2><p>Sella una versión desde el editor y elige a quién deseas enviarla. Las actividades del profesor aparecerán aquí cuando estén habilitadas.</p></section></main>;
+  return <main className="workspace dashboard"><section className="dashboard-head"><div><p className="eyebrow">{t("Versiones compartidas")}</p><h1>{t("Entregas")}</h1><p>{t("Una entrega contiene una versión inmutable; tus borradores posteriores permanecen privados.")}</p></div></section><section className="empty-state"><span>↗</span><h2>{submissions.length ? t("{count} entregas registradas", { count: submissions.length }) : t("Todavía no has realizado ninguna entrega")}</h2><p>{t("Sella una versión desde el editor y elige a quién deseas enviarla. Las actividades del profesor aparecerán aquí cuando estén habilitadas.")}</p></section></main>;
 }
 
 export default function App() {
+  useLocale();
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
   const [authNotice, setAuthNotice] = useState("");
   const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [submissions] = useState<Submission[]>([]); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
@@ -466,7 +468,7 @@ export default function App() {
   const loadArchive = async () => { const [texts, groups] = await Promise.all([api<{ documents: VeritasDocument[] }>("/documents"), api<{ folders: DocumentFolder[] }>("/folders")]); setDocuments(texts.documents); setFolders(groups.folders); };
   useEffect(() => {
     const expire = (event: Event) => {
-      const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? "Tu sesión ha caducado. Vuelve a identificarte para continuar.";
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
       setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
@@ -478,11 +480,11 @@ export default function App() {
   const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
   const persist = (updated: VeritasDocument) => { setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
   const move = async (document: VeritasDocument, folderId: string | null) => { if (demo) persist({ ...document, folder_id: folderId }); else { const result = await api<{ document: VeritasDocument }>(`/documents/${document.id}`, { method: "PATCH", body: JSON.stringify({ folder_id: folderId }) }); persist({ ...document, ...result.document }); } };
-  const saveFolder = async (name: string, id?: string): Promise<DocumentFolder> => { const folder = demo ? { id: id ?? makeId(), name } : (await api<{ folder: DocumentFolder }>(id ? `/folders/${id}` : "/folders", { method: id ? "PATCH" : "POST", body: JSON.stringify({ name }) })).folder; setFolders(previous => [...previous.filter(item => item.id !== folder.id), folder].sort((a, b) => a.name.localeCompare(b.name, "es"))); return folder; };
+  const saveFolder = async (name: string, id?: string): Promise<DocumentFolder> => { const folder = demo ? { id: id ?? makeId(), name } : (await api<{ folder: DocumentFolder }>(id ? `/folders/${id}` : "/folders", { method: id ? "PATCH" : "POST", body: JSON.stringify({ name }) })).folder; setFolders(previous => [...previous.filter(item => item.id !== folder.id), folder].sort((a, b) => a.name.localeCompare(b.name, getLocale()))); return folder; };
   const removeFolder = async (folder: DocumentFolder) => { if (!demo) await api(`/folders/${folder.id}`, { method: "DELETE" }); setFolders(previous => previous.filter(item => item.id !== folder.id)); setDocuments(previous => previous.map(document => document.folder_id === folder.id ? { ...document, folder_id: null } : document)); };
   const returnToDocuments = () => { setView("documents"); if (!demo) void loadArchive().catch(() => undefined); };
   const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setFolders([]); setView("documents"); };
-  if (booting) return <main className="loading"><Logo /><span></span><p>Abriendo tu archivo…</p></main>;
+  if (booting) return <main className="loading"><Logo /><span></span><p>{t("Abriendo tu archivo…")}</p></main>;
   if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
     {view === "documents" && <DocumentsWorkspace documents={documents} folders={folders} onOpen={open} onCreate={create} onDelete={remove} onMove={move} onFolderSave={saveFolder} onFolderDelete={removeFolder} />}

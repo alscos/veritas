@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { t, useLocale } from "./i18n";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Mark, mergeAttributes, type JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -13,6 +14,8 @@ import { isHistoryTransaction } from "@tiptap/pm/history";
 import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import type { EditorProps } from "@tiptap/pm/view";
+import type { EditorView } from "@tiptap/pm/view";
+import type { Transaction } from "@tiptap/pm/state";
 import type { PageSettings, WritingEvent } from "./types";
 import { DEFAULT_PAGE, FONT_FAMILIES, FONT_SIZES, PAGE_GAP, pageDimensions } from "./pageLayout";
 import { PageBreak, Pagination, paginationKey } from "./Pagination";
@@ -21,12 +24,49 @@ import EditorToolbar from "./EditorToolbar";
 
 export const VERITAS_EVENT_META = "veritas:event";
 const PROVENANCE_APPLIED_META = "veritas:provenance-applied";
+export const COMPOSITION_END_META = "veritas:composition-end";
+const COMPOSITION_FLUSHED_META = "veritas:composition-flushed";
 const ORIGINS = new Set(["paste", "paste-edited"]);
 const FONTS = new Set(Object.keys(FONT_FAMILIES));
 const SIZES = new Set(["small", "normal", "large", "x-large", ...FONT_SIZES.map(String)]);
 
 type MutationEvent = Extract<WritingEvent["event_type"], "insert" | "delete" | "paste" | "paste_edit" | "format">;
 type EventMeta = { eventType: MutationEvent; inputType: string; data?: string | null };
+type EditedRange = { from: number; to: number };
+type ComposedEdits = { ranges: EditedRange[]; meta?: EventMeta };
+const compositionKey = new PluginKey<ComposedEdits>("veritasProvenance");
+
+const importedEdits = (transaction: Transaction, oldState: EditorState, pending: EditedRange[] = []) => {
+  const supplied = transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined;
+  const edits: (EditedRange & { meta: EventMeta })[] = [];
+  if (!transaction.docChanged || transaction.getMeta(PROVENANCE_APPLIED_META)
+    || isHistoryTransaction(transaction) || transaction.getMeta("preventUpdate")
+    || supplied?.eventType === "paste" || supplied?.eventType === "format"
+    || ["paste", "drop"].includes(transaction.getMeta("uiEvent"))) return edits;
+  const provenance = oldState.schema.marks.veritasProvenance;
+  transaction.steps.forEach((step, stepIndex) => {
+    if (!(step instanceof ReplaceStep)) return;
+    const before = transaction.docs[stepIndex];
+    step.getMap().forEach((from, to, insertedFrom, insertedTo) => {
+      const stored = stepIndex === 0 && oldState.selection.empty && oldState.selection.from === from ? oldState.storedMarks : null;
+      const tracked = pending.some(range => {
+        const map = transaction.mapping.slice(0, stepIndex);
+        return map.map(range.from, -1) <= to && map.map(range.to, 1) >= from;
+      });
+      const imported = tracked || before.rangeHasMark(from, to, provenance)
+        || [...before.resolve(from).marks(), ...(stored ?? [])].some(mark => mark.type === provenance && ORIGINS.has(mark.attrs.origin));
+      const text = step.slice.content.textBetween(0, step.slice.content.size, "\n");
+      const hasText = step.slice.content.textBetween(0, step.slice.content.size, "") !== "";
+      if (!imported || (from === to && !hasText)) return;
+      const map = transaction.mapping.slice(stepIndex + 1);
+      edits.push({ from: map.map(insertedFrom, 1), to: map.map(insertedTo, -1), meta: {
+        eventType: "paste_edit", inputType: supplied?.inputType ?? (hasText ? "insertReplacementText" : "deleteContent"),
+        data: supplied?.data ?? (hasText ? text : null),
+      } });
+    });
+  });
+  return edits;
+};
 
 export type EditorMutation = EventMeta & { html: string };
 
@@ -66,59 +106,73 @@ export const Provenance = Mark.create({
   renderHTML({ HTMLAttributes }) { return ["mark", mergeAttributes(HTMLAttributes), 0]; },
   addProseMirrorPlugins() {
     const provenance = this.type;
-    return [new Plugin({
-      key: new PluginKey("veritasProvenance"),
+    let currentView: EditorView | null = null;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    return [new Plugin<ComposedEdits>({
+      key: compositionKey,
+      state: {
+        init: () => ({ ranges: [] }),
+        apply(transaction, previous, oldState) {
+          if (transaction.getMeta(COMPOSITION_FLUSHED_META)) return { ranges: [] };
+          const ranges = previous.ranges.map(range => ({ from: transaction.mapping.map(range.from, -1), to: transaction.mapping.map(range.to, 1) }));
+          if (!transaction.getMeta("composition") && !currentView?.composing) return { ...previous, ranges };
+          const edits = importedEdits(transaction, oldState, previous.ranges);
+          return { ranges: [...ranges, ...edits.map(({ from, to }) => ({ from, to }))], meta: edits.at(-1)?.meta ?? previous.meta };
+        },
+      },
+      props: {
+        handleDOMEvents: {
+          compositionend(view) {
+            // Let ProseMirror read the final native DOM mutation before changing
+            // marks. Splitting the composing text node commits a Mac dead key.
+            clearTimeout(finishTimer);
+            finishTimer = setTimeout(() => {
+              if (!view.isDestroyed && !view.composing) view.dispatch(view.state.tr.setMeta(COMPOSITION_END_META, true));
+            }, 0);
+            return false;
+          },
+        },
+      },
+      view(view) {
+        currentView = view;
+        return { destroy() { clearTimeout(finishTimer); currentView = null; } };
+      },
       appendTransaction(transactions, oldState, newState) {
         const correction = newState.tr;
         let eventMeta: EventMeta | undefined;
         let continueEditing = false;
 
+        const pending = compositionKey.getState(newState)!;
+        const finishing = transactions.some(transaction => transaction.getMeta(COMPOSITION_END_META));
+        if (!finishing && (currentView?.composing || transactions.some(transaction => transaction.getMeta("composition")))) {
+          // Preserve event classification during composition, without touching
+          // the DOM or stored marks that the native keyboard still owns.
+          return pending.meta && !transactions.some(transaction => transaction.getMeta(PROVENANCE_APPLIED_META))
+            ? correction.setMeta(PROVENANCE_APPLIED_META, true).setMeta(VERITAS_EVENT_META, pending.meta) : null;
+        }
+
+        const markRange = (start: number, end: number) => {
+          if (end < start) return;
+          newState.doc.nodesBetween(start, end, (node, position) => {
+            if (!node.isText) return;
+            const from = Math.max(start, position), to = Math.min(end, position + node.nodeSize);
+            if (from < to) correction.removeMark(from, to, provenance).addMark(from, to, provenance.create({ origin: "paste-edited" }));
+          });
+          if (newState.selection.empty && newState.selection.from >= start && newState.selection.from <= end) continueEditing = true;
+        };
+        if (finishing) {
+          pending.ranges.forEach(range => markRange(range.from, range.to));
+          eventMeta = pending.meta;
+          correction.setMeta(COMPOSITION_FLUSHED_META, true).setMeta("addToHistory", false);
+        }
+
         transactions.forEach((transaction, transactionIndex) => {
-          const supplied = transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined;
-          // Formatting, history and imported content already carry their own provenance.
-          if (!transaction.docChanged || transaction.getMeta(PROVENANCE_APPLIED_META)
-            || isHistoryTransaction(transaction) || transaction.getMeta("preventUpdate")
-            || supplied?.eventType === "paste" || supplied?.eventType === "format"
-            || ["paste", "drop"].includes(transaction.getMeta("uiEvent"))) return;
-
-          transaction.steps.forEach((step, stepIndex) => {
-            if (!(step instanceof ReplaceStep)) return;
-            const before = transaction.docs[stepIndex];
-            step.getMap().forEach((from, to, insertedFrom, insertedTo) => {
-              const marks = before.resolve(from).marks();
-              const stored = transactionIndex === 0 && stepIndex === 0
-                && oldState.selection.empty && oldState.selection.from === from
-                ? oldState.storedMarks : null;
-              const imported = before.rangeHasMark(from, to, provenance)
-                || [...marks, ...(stored ?? [])].some(mark => mark.type === provenance && ORIGINS.has(mark.attrs.origin));
-              const insertedText = step.slice.content.textBetween(0, step.slice.content.size, "\n");
-              const hasInsertedText = step.slice.content.textBetween(0, step.slice.content.size, "") !== "";
-              if (!imported || (from === to && !hasInsertedText)) return;
-
-              // Step coordinates belong to that step's document. Map only the
-              // inserted range through subsequent steps, never the surrounding paste.
-              let start = transaction.mapping.slice(stepIndex + 1).map(insertedFrom, 1);
-              let end = transaction.mapping.slice(stepIndex + 1).map(insertedTo, -1);
-              for (const later of transactions.slice(transactionIndex + 1)) {
-                start = later.mapping.map(start, 1);
-                end = later.mapping.map(end, -1);
-              }
-              if (end < start) return;
-              if (hasInsertedText) newState.doc.nodesBetween(start, end, (node, position) => {
-                if (!node.isText) return;
-                const textFrom = Math.max(start, position);
-                const textTo = Math.min(end, position + node.nodeSize);
-                if (textFrom >= textTo) return;
-                correction.removeMark(textFrom, textTo, provenance);
-                correction.addMark(textFrom, textTo, provenance.create({ origin: "paste-edited" }));
-              });
-              if (newState.selection.empty && newState.selection.from >= start && newState.selection.from <= end) continueEditing = true;
-              eventMeta = {
-                eventType: "paste_edit",
-                inputType: supplied?.inputType ?? (hasInsertedText ? "insertReplacementText" : "deleteContent"),
-                data: supplied?.data ?? (hasInsertedText ? insertedText : null),
-              };
-            });
+          importedEdits(transaction, transactionIndex === 0 ? oldState : newState).forEach(edit => {
+            let start = edit.from, end = edit.to;
+            for (const later of transactions.slice(transactionIndex + 1)) {
+              start = later.mapping.map(start, 1); end = later.mapping.map(end, -1);
+            }
+            markRange(start, end); eventMeta = edit.meta;
           });
         });
 
@@ -194,7 +248,7 @@ export const createVeritasExtensions = (options?: { page?: PageSettings; onPageC
     link: { openOnClick: false, HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" } },
     trailingNode: false,
   }),
-  Placeholder.configure({ placeholder: "Empieza a escribir…" }),
+  Placeholder.configure({ placeholder: () => t("Empieza a escribir…") }),
   Provenance,
   Typography,
   BlockLayout,
@@ -260,6 +314,7 @@ export const createVeritasEditorProps = (options?: { onImageFiles: (files: File[
 };
 
 const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEditor({ initialHtml, onBlur, onFocus, onMutation, title, page, onPageChange, beforeExport, onUploadImage }, ref) {
+  const locale = useLocale();
   const [, renderToolbar] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [zoom, setZoom] = useState(0);
@@ -269,10 +324,18 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
   const viewport = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploads = useRef(new Set<Promise<boolean>>());
+  const initialContent = useRef(initialHtml || "");
+  const initialPage = useRef(page);
+  const uploadFilesRef = useRef<(files: File[], position: number) => void>(() => undefined);
+  // Keep editor options stable while React updates metrics, toolbar or language.
+  // The mutable draft belongs to ProseMirror; content is only its initial seed.
+  const extensions = useMemo(() => createVeritasExtensions({ page: initialPage.current, onPageCount: setPageCount }), []);
+  const editorProps = useMemo(() => createVeritasEditorProps({ onImageFiles: (files, position) => uploadFilesRef.current(files, position) }), []);
   const editor = useEditor({
-    content: initialHtml || "",
-    extensions: createVeritasExtensions({ page, onPageCount: setPageCount }),
-    editorProps: createVeritasEditorProps({ onImageFiles: (files, position) => uploadFiles(files, position) }),
+    content: initialContent.current,
+    extensions,
+    editorProps,
+    shouldRerenderOnTransaction: false,
     onUpdate({ editor: current, transaction, appendedTransactions }) {
       const supplied = appendedTransactions.map(item => item.getMeta(VERITAS_EVENT_META) as EventMeta | undefined).find(meta => meta !== undefined)
         ?? (transaction.getMeta(VERITAS_EVENT_META) as EventMeta | undefined);
@@ -296,7 +359,7 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
       setBusy(true); setMessage("");
       try {
         for (const file of files) {
-          if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Elige una imagen JPG, PNG, WebP o GIF de hasta 5 MB.");
+          if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error(t("Elige una imagen JPG, PNG, WebP o GIF de hasta 5 MB."));
           const image = await onUploadImage(file);
           if (editor.isDestroyed) return false;
           const dimensions = pageDimensions(page);
@@ -306,12 +369,17 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
           editor.chain().setMeta(VERITAS_EVENT_META, { eventType: "format", inputType: "insertImage", data: JSON.stringify({ name: file.name, sha256: image.sha256 ?? null }) }).insertContentAt(bookmark.position, { type: "image", attrs: { src: image.src, alt: file.name.slice(0, 300), width: Math.round(width), height: Math.round(width * image.height / image.width), sha256: image.sha256 ?? null } }).run();
         }
         return true;
-      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "No se pudo guardar la imagen."); return false; }
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : t("No se pudo guardar la imagen.")); return false; }
       finally { editor.off("transaction", mapPosition); }
     })();
     uploads.current.add(operation);
     void operation.finally(() => { uploads.current.delete(operation); setBusy(uploads.current.size > 0); });
   };
+  uploadFilesRef.current = uploadFiles;
+
+  useEffect(() => {
+    if (editor) editor.view.dispatch(editor.state.tr.setMeta("inkgroove:locale", locale).setMeta("addToHistory", false));
+  }, [editor, locale]);
 
   useEffect(() => {
     if (!editor) return;
@@ -332,7 +400,7 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
     waitForUploads: async () => { const results = await Promise.all(Array.from(uploads.current)); return results.every(Boolean); },
   }), [editor, initialHtml]);
 
-  if (!editor) return <div className="editor-loading">Preparando el documento…</div>;
+  if (!editor) return <div className="editor-loading">{t("Preparando el documento…")}</div>;
 
   const dimensions = pageDimensions(page);
   const scale = zoom || Math.min(1, availableWidth / dimensions.widthPx);
@@ -340,16 +408,16 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
   return <>
     <EditorToolbar editor={editor} title={title} page={page} onPageChange={onPageChange} onImage={() => fileInput.current?.click()} beforeExport={beforeExport} busy={busy} zoom={zoom} onZoom={setZoom} onError={setMessage}/>
     <input type="file" ref={fileInput} className="visually-hidden" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={event => { const files = Array.from(event.target.files ?? []); if (files.length) uploadFiles(files, editor.state.selection.from); event.target.value = ""; }}/>
-    {(message || busy) && <div className={`editor-message${message ? " error" : ""}`} role={message ? "alert" : "status"}>{message || "Guardando imagen… puedes seguir escribiendo."}</div>}
+    {(message || busy) && <div className={`editor-message${message ? " error" : ""}`} role={message ? "alert" : "status"}>{message || t("Guardando imagen… puedes seguir escribiendo.")}</div>}
     <div className="page-viewport" ref={viewport}>
       <div className="page-scaled" style={{ width: dimensions.widthPx * scale, height: height * scale }}>
         <div className="page-canvas" style={{ width: dimensions.widthPx, minHeight: height, transform: `scale(${scale})` }}>
           <div className="page-backgrounds" aria-hidden="true">{Array.from({ length: pageCount }, (_, index) => <div key={index} style={{ top: index * (dimensions.heightPx + PAGE_GAP), height: dimensions.heightPx }}><span>{index + 1}</span></div>)}</div>
-          <EditorContent editor={editor} className="editor-host paginated-host" style={{ "--page-margin": `${dimensions.marginPx}px`, "--page-image-height": `${dimensions.heightPx - dimensions.marginPx * 2 - 40}px`, "--page-min-height": `${height}px` } as React.CSSProperties}/>
+          <EditorContent editor={editor} className="editor-host paginated-host" style={{ "--page-margin": `${dimensions.marginPx}px`, "--page-image-height": `${dimensions.heightPx - dimensions.marginPx * 2 - 40}px`, "--page-min-height": `${height}px`, "--page-break-label": JSON.stringify(t("Salto de página")) } as React.CSSProperties}/>
         </div>
       </div>
     </div>
-    <div className="page-status"><span>{pageCount} {pageCount === 1 ? "página" : "páginas"} · {page.format.toUpperCase()} · {Math.round(scale * 100)}%</span><small><i className="legend paste"/>Pegado <i className="legend edited"/>Reelaborado</small></div>
+    <div className="page-status"><span>{pageCount} {pageCount === 1 ? t("página") : t("páginas")} · {page.format.toUpperCase()} · {Math.round(scale * 100)}%</span><small><i className="legend paste"/>{t("Pegado")} <i className="legend edited"/>{t("Reelaborado")}</small></div>
   </>;
 });
 

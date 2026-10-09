@@ -45,4 +45,6 @@ abriéndose mediante el HTML saneado, con A4 como configuración de papel inicia
 
 ## Criterio de aceptación antes de desplegar
 
+La composición de teclas muertas e IME conserva el nodo nativo hasta que termine. La procedencia del rango reelaborado se aplica después de `compositionend`, sin normalizar Unicode ni dividir el carácter provisional. Véase [entrada bilingüe y corrección de tildes](I18N.md). La CI comprueba ahora este recorrido en Chromium; la aceptación con teclado físico de macOS y Safari sigue siendo una comprobación del servidor instalado.
+
 La rama podrá sustituir al editor actual cuando pase las pruebas automáticas, se valide manualmente en Chrome y Safari, y se complete en Alpine el recorrido: crear, escribir, pegar, reelaborar, dar formato, deshacer, guardar, abrir la moviola, volver, recargar y sellar.

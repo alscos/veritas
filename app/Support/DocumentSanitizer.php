@@ -115,7 +115,7 @@ final class DocumentSanitizer
         if (!$matches) return;
         $images = DocumentImage::where('document_id', $documentId)->whereIn('id', array_column($matches, 3))->pluck('id')->all();
         foreach ($matches as $match) if ($match[2] !== $documentId || !in_array($match[3], $images, true)) {
-            throw ValidationException::withMessages(['content_html' => 'Una imagen no pertenece a este documento.']);
+            throw ValidationException::withMessages(['content_html' => __('inkgroove.image_owner')]);
         }
     }
 

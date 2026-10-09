@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { JSONContent } from "@tiptap/core";
 import { strToU8, zipSync } from "fflate";
 import { FONT_FAMILIES, pageDimensions } from "./pageLayout";
@@ -78,7 +79,7 @@ export const exportOdt = (document: JSONContent, options: ExportOptions): Uint8A
     }
     if (node.type === "image") {
       const image = options.images?.[node.attrs?.src];
-      if (!image) throw new Error("No se ha podido incluir una imagen en el archivo.");
+      if (!image) throw new Error(t("No se ha podido incluir una imagen en el archivo."));
       const extension = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[image.mime] ?? "png";
       const name = `Pictures/image-${manifest.length + 1}.${extension}`;
       files[name] = image.bytes;
@@ -143,7 +144,7 @@ export const exportRtf = (document: JSONContent, options: ExportOptions): string
     if (node.type === "bulletList" || node.type === "orderedList") return children(node).map((item, index) => children(item).map((child, childIndex) => block(child, childIndex ? "" : node.type === "bulletList" ? "\\bullet\\tab " : `${index + Number(node.attrs?.start ?? 1)}.\\tab `, quote)).join("")).join("");
     if (node.type === "image") {
       const image = options.images?.[node.attrs?.src];
-      if (!image || !["image/png", "image/jpeg"].includes(image.mime)) throw new Error("No se pudo preparar una imagen para RTF.");
+      if (!image || !["image/png", "image/jpeg"].includes(image.mime)) throw new Error(t("No se pudo preparar una imagen para RTF."));
       const dimensions = pageDimensions(options.page);
       const width = Math.min(Number(node.attrs?.width) || Math.min(image.width, 600), (dimensions.width - options.page.margin * 2) * 96 / 25.4, (dimensions.height - options.page.margin * 2 - 8) * 96 / 25.4 * image.width / image.height);
       const hex = Array.from(image.bytes, byte => byte.toString(16).padStart(2, "0")).join("");
@@ -171,9 +172,9 @@ export const loadExportImages = async (document: JSONContent, rtf = false): Prom
   const sources = new Set<string>();
   const visit = (node: JSONContent) => { if (node.type === "image" && node.attrs?.src) sources.add(node.attrs.src); children(node).forEach(visit); }; visit(document);
   const entries = await Promise.all(Array.from(sources).map(async src => {
-    if (!/^\/api\/documents\/[a-f0-9-]{36}\/images\/[a-f0-9-]{36}$/.test(src) && !/^data:image\/(png|jpeg|webp|gif);base64,/.test(src)) throw new Error("La imagen no tiene un origen válido.");
+    if (!/^\/api\/documents\/[a-f0-9-]{36}\/images\/[a-f0-9-]{36}$/.test(src) && !/^data:image\/(png|jpeg|webp|gif);base64,/.test(src)) throw new Error(t("La imagen no tiene un origen válido."));
     const response = await fetch(src, { credentials: "same-origin" });
-    if (!response.ok) throw new Error("No se pudo descargar una imagen. Comprueba tu sesión.");
+    if (!response.ok) throw new Error(t("No se pudo descargar una imagen. Comprueba tu sesión."));
     let blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const image = new Image(); image.src = url;
@@ -182,7 +183,7 @@ export const loadExportImages = async (document: JSONContent, rtf = false): Prom
       const { naturalWidth: width, naturalHeight: height } = image;
       if (rtf && !["image/png", "image/jpeg"].includes(blob.type)) {
         const canvas = documentCanvas(width, height); canvas.getContext("2d")!.drawImage(image, 0, 0);
-        blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error("No se pudo convertir una imagen.")), "image/png"));
+        blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error(t("No se pudo convertir una imagen."))), "image/png"));
       }
       return [src, { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type, width, height }] as const;
     } finally { URL.revokeObjectURL(url); }

@@ -29,7 +29,7 @@ class DocumentController
         ]);
         $document = Document::create([
             'owner_id' => $request->user()->id,
-            'title' => trim($data['title'] ?? '') ?: 'Documento sin título',
+            'title' => trim($data['title'] ?? '') ?: __('inkgroove.untitled'),
             'folder_id' => $data['folder_id'] ?? null,
         ]);
         // Reload database defaults such as content_html before serializing the
@@ -59,7 +59,7 @@ class DocumentController
         ]);
         if (array_key_exists('folder_id', $data)) $document->folder_id = $data['folder_id'];
         if (array_key_exists('page_settings', $data)) $document->page_settings = $data['page_settings'];
-        if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: 'Documento sin título';
+        if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: __('inkgroove.untitled');
         if (array_key_exists('content_html', $data)) {
             $document->content_html = DocumentSanitizer::html((string) ($data['content_html'] ?? ''));
             DocumentSanitizer::validateImages($document->content_html, $document->id);
@@ -80,7 +80,7 @@ class DocumentController
             ->where('document_versions.document_id', $document->id)
             ->exists();
 
-        abort_if($hasSubmissions, 409, 'No se puede eliminar un documento que ya ha sido entregado.');
+        abort_if($hasSubmissions, 409, __('inkgroove.submitted_document'));
 
         $paths = $document->images()->get()->map(fn ($image) => $image->path());
         $document->delete();

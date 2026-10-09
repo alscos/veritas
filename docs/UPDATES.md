@@ -42,6 +42,8 @@ Si Git informa de una divergencia o un conflicto, resolverlo antes de seguir. No
 
 ## 3. Qué hace GitHub al actualizar main
 
+La actualización del 9 de octubre añade `npm run test:browser`: Chromium comprueba la composición de tildes dentro de pegados y el cambio ES/EN con una API controlada. Sigue separada de las pruebas PHP, MySQL y del arranque real del paquete Docker. El paquete PHP incluye `lang/`; Node y Playwright siguen siendo herramientas de desarrollo/CI.
+
 `.github/workflows/release.yml` ejecuta pruebas de frontend, PHP y los actualizadores, prueba migraciones y texto Unicode con MySQL 8.4 real y compila el frontend. Además, extrae el ZIP real de Alpine con los permisos del actualizador, construye la imagen y arranca Apache contra MySQL. Comprueba los comandos de Laravel, la lectura del código como `www-data`, la portada, los recursos del editor y el diagnóstico durante mantenimiento. Solo si todo pasa publica una release privada **build-SHA12**, con dos ZIP y sus hashes:
 
 | Destino | Paquete | Contenido |

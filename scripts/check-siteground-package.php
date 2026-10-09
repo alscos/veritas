@@ -13,6 +13,9 @@ $fail = static function (string $reason): never {
 foreach (['inkgroove/artisan', 'inkgroove/vendor/autoload.php', 'inkgroove/deploy/siteground/env.example', 'public_html/index.php', 'public_html/.htaccess', 'public_html/build/manifest.json', 'public_html/build/OFL.txt', 'BUILD-INFO.json', 'INSTALL-SITEGROUND.md'] as $file) {
     if (!is_file($root.'/'.$file)) $fail('falta '.$file);
 }
+foreach (['es/inkgroove.php', 'es/validation.php', 'en/inkgroove.php'] as $file) {
+    if (!is_file($root.'/inkgroove/lang/'.$file)) $fail('faltan traducciones: '.$file);
+}
 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
 $files = [];
 foreach ($iterator as $file) {

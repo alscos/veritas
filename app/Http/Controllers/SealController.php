@@ -15,7 +15,7 @@ class SealController
     public function store(Request $request, Document $document): JsonResponse
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
-        abort_if($document->word_count < 1, 422, 'No se puede certificar un documento vacío.');
+        abort_if($document->word_count < 1, 422, __('inkgroove.empty_document'));
 
         [$version, $certificate] = DB::transaction(function () use ($document): array {
             $document = Document::query()->lockForUpdate()->findOrFail($document->id);

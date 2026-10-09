@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Editor, type EditorEvents } from "@tiptap/core";
 import { Slice } from "@tiptap/pm/model";
-import { createVeritasEditorProps, createVeritasExtensions, VERITAS_EVENT_META } from "./VeritasEditor";
+import { createVeritasEditorProps, createVeritasExtensions, VERITAS_EVENT_META, COMPOSITION_END_META } from "./VeritasEditor";
 import { findMatches } from "./EditorTools";
 
 const active: Editor[] = [];
@@ -68,11 +68,13 @@ describe("VeritasEditor", () => {
   it("marca también una sustitución recibida como transacción del navegador", () => {
     const editor = makeEditor('<p><mark data-origin="paste">Monica</mark></p>');
     editor.view.dispatch(editor.state.tr.insertText("ó", 2, 3).setMeta("composition", 1));
+    expect(editor.getHTML()).toBe('<p><mark data-origin="paste">Mónica</mark></p>');
+    editor.view.dispatch(editor.state.tr.setMeta(COMPOSITION_END_META, true));
 
     expect(editor.getHTML()).toBe('<p><mark data-origin="paste">M</mark><mark data-origin="paste-edited">ó</mark><mark data-origin="paste">nica</mark></p>');
   });
 
-  it("publica una sola actualización con la procedencia corregida para el registro", () => {
+  it("registra la composición y su procedencia definitiva al terminar", () => {
     const updates: { html: string; eventType: string | undefined }[] = [];
     const editor = makeEditor('<p><mark data-origin="paste">Monica</mark></p>', ({ editor: current, transaction, appendedTransactions }) => {
       const supplied = appendedTransactions.map(item => item.getMeta(VERITAS_EVENT_META)).find(meta => meta !== undefined)
@@ -80,11 +82,40 @@ describe("VeritasEditor", () => {
       updates.push({ html: current.getHTML(), eventType: supplied?.eventType });
     });
     editor.view.dispatch(editor.state.tr.insertText("ó", 2, 3).setMeta("composition", 1));
+    editor.view.dispatch(editor.state.tr.setMeta(COMPOSITION_END_META, true));
 
     expect(updates).toEqual([{
+      html: '<p><mark data-origin="paste">Mónica</mark></p>',
+      eventType: "paste_edit",
+    }, {
       html: '<p><mark data-origin="paste">M</mark><mark data-origin="paste-edited">ó</mark><mark data-origin="paste">nica</mark></p>',
       eventType: "paste_edit",
     }]);
+  });
+
+  it("no divide el nodo de composición entre la tilde provisional y la vocal final", () => {
+    const original = '<p><mark data-origin="paste">gnesis</mark></p>';
+    const editor = makeEditor(original);
+    editor.commands.setTextSelection(2);
+    editor.view.dispatch(editor.state.tr.insertText("´", 2, 2).setMeta("composition", 1));
+    expect(editor.getHTML()).toBe('<p><mark data-origin="paste">g´nesis</mark></p>');
+    editor.view.dispatch(editor.state.tr.insertText("é", 2, 3).setMeta("composition", 1));
+    editor.view.dispatch(editor.state.tr.setMeta(COMPOSITION_END_META, true));
+    const final = '<p><mark data-origin="paste">g</mark><mark data-origin="paste-edited">é</mark><mark data-origin="paste">nesis</mark></p>';
+    expect(editor.getHTML()).toBe(final);
+    expect(makeEditor(final).getHTML()).toBe(final);
+    editor.commands.undo();
+    expect(editor.getHTML()).toBe(original);
+    editor.commands.redo();
+    expect(editor.getHTML()).toBe(final);
+  });
+
+  it("conserva Unicode compuesto y descompuesto sin normalizar el texto", () => {
+    const text = 'ÁÉÍÓÚ áéíóú üñ ¿Qué? ¡Sí! ge\u0301nesis habi\u0301amos';
+    const editor = makeEditor('<p></p>');
+    typeText(editor, text);
+    expect(editor.getText()).toBe(text);
+    expect(makeEditor(editor.getHTML()).getText()).toBe(text);
   });
 
   it("restaura el texto rojo al deshacer y el azul al rehacer", () => {

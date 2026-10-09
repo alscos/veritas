@@ -18,7 +18,7 @@ class FolderController
         if (is_string($request->input('name'))) $request->merge(['name' => trim($request->input('name'))]);
         $data = $request->validate(['name' => ['required', 'string', 'max:100', Rule::unique('document_folders')->where('owner_id', $request->user()->id)]]);
         $name = trim($data['name']);
-        abort_if($name === '', 422, 'Escribe un nombre para la carpeta.');
+        abort_if($name === '', 422, __('inkgroove.folder_name'));
         $folder = DocumentFolder::create(['owner_id' => $request->user()->id, 'name' => $name]);
         return response()->json(['folder' => $folder->loadCount('documents')], 201);
     }
@@ -28,7 +28,7 @@ class FolderController
         if (is_string($request->input('name'))) $request->merge(['name' => trim($request->input('name'))]);
         $data = $request->validate(['name' => ['required', 'string', 'max:100', Rule::unique('document_folders')->where('owner_id', $request->user()->id)->ignore($folder->id)]]);
         $name = trim($data['name']);
-        abort_if($name === '', 422, 'Escribe un nombre para la carpeta.');
+        abort_if($name === '', 422, __('inkgroove.folder_name'));
         $folder->update(['name' => $name]);
         return response()->json(['folder' => $folder->loadCount('documents')]);
     }
