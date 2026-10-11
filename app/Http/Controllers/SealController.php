@@ -15,10 +15,14 @@ class SealController
     public function store(Request $request, Document $document): JsonResponse
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
-        abort_if($document->word_count < 1, 422, __('inkgroove.empty_document'));
-
         [$version, $certificate] = DB::transaction(function () use ($document): array {
             $document = Document::query()->lockForUpdate()->findOrFail($document->id);
+            abort_if($document->word_count < 1, 422, __('inkgroove.empty_document'));
+            $boundary = [];
+            foreach ($document->sessions()->orderBy('id')->get() as $session) {
+                $last = $session->events()->reorder()->orderByDesc('sequence')->first();
+                if ($last) $boundary[$session->id] = ['sequence' => (int) $last->sequence, 'event_id' => (int) $last->id, 'hash' => $last->event_hash];
+            }
             $versionNumber = ((int) $document->versions()->max('version_number')) + 1;
             $processHash = $document->sessions()->latest()->value('last_hash');
             $sealedAt = now();
@@ -35,6 +39,8 @@ class SealController
                 'sealed_at' => $sealedAt,
             ]);
             $payload = [
+                'format_version' => 2,
+                'history_boundary' => $boundary,
                 'version_id' => $version->id,
                 'document_id' => $document->id,
                 'version' => $versionNumber,

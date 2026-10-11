@@ -42,7 +42,7 @@ class LocaleTest extends TestCase
         $this->actingAs($author);
         $html = '<p>Génesis habíamos pingüino niño ge'."\u{0301}".'nesis</p><p></p><p>Final</p>';
         $document = $this->withHeader('Accept-Language', 'es')->postJson('/api/documents', ['title' => 'Mi manuscrito'])->assertCreated()->json('document');
-        $this->patchJson('/api/documents/'.$document['id'], ['content_html' => $html])->assertOk();
+        $this->patchJson('/api/documents/'.$document['id'], ['revision' => (int) \App\Models\Document::findOrFail($document['id'])->revision, 'content_html' => $html])->assertOk();
         $this->withHeader('Accept-Language', 'en')->getJson('/api/documents/'.$document['id'])->assertOk()
             ->assertJsonPath('document.title', 'Mi manuscrito')->assertJsonPath('document.content_html', $html);
     }

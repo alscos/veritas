@@ -1,4 +1,6 @@
 /.env
+/.dev-private/
+/.dev-backups/
 /.env.*
 !/.env.example
 /data/

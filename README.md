@@ -35,4 +35,13 @@ Consulta [INSTALL.md](INSTALL.md) para Epheso, actualizaciones, copias de seguri
 
 ## Estado
 
+Para editar en el Mac y compilar/probar en Alpine mediante un entorno aislado,
+consultar [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 Es una versión de desarrollo para pruebas privadas. El sellado demuestra la integridad del registro recibido por Veritas, no la autoría intelectual absoluta ni la ausencia de ayuda externa. Antes de utilizarla con usuarios reales deben completarse correo verificado, recuperación de contraseña, administración, política de retención, pruebas de penetración y revisión jurídica/RGPD.
+
+La lectura progresiva del historial permite abrir el borrador antes de completar
+las métricas y recorrer la moviola con instantáneas bajo demanda. El contrato
+paginado y la validación con 25.000 eventos ficticios están documentados en
+[arquitectura](docs/ARCHITECTURE.md) y
+[mediciones de apertura](docs/DOCUMENT_OPEN_PERFORMANCE.md).

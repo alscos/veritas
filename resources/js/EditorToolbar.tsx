@@ -6,6 +6,7 @@ import { AlignLeft, AlignCenter, AlignRight, AlignJustify, Bold, Italic, Underli
 import { DEFAULT_PAGE, FONT_FAMILIES, FONT_SIZES, PAGE_FORMATS } from "./pageLayout";
 import { findMatches, searchKey } from "./EditorTools";
 import { VERITAS_EVENT_META } from "./VeritasEditor";
+import { identityGeneration } from "./api";
 import { downloadEditable } from "./exportDocument";
 import type { PageSettings } from "./types";
 
@@ -53,8 +54,9 @@ export default function EditorToolbar({ editor, title, page = DEFAULT_PAGE, onPa
     editor.view.dispatch(transaction); setMatchIndex(0);
   };
   const exportFile = async (format: "odt" | "rtf") => {
+    const epoch = identityGeneration();
     setExporting(true); onError("");
-    try { if (await beforeExport()) await downloadEditable(editor.getJSON(), { title, page }, format); }
+    try { if (await beforeExport() && epoch === identityGeneration()) await downloadEditable(editor.getJSON(), { title, page }, format, () => epoch === identityGeneration()); }
     catch (reason) { onError(reason instanceof Error ? reason.message : t("No se pudo descargar el documento.")); }
     finally { setExporting(false); }
   };

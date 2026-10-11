@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'document_conflict' => 'El documento ha cambiado en el servidor. Conserva tu borrador y consulta el estado remoto.',
+    'event_mismatch' => 'Esta secuencia ya contiene otro evento. Se conserva tu copia local.',
+
+    'legacy_history' => 'Esta versión antigua no tiene una frontera de proceso verificable. Solo se comparte la instantánea sellada.',
     'description' => 'Conserva el proceso de escritura, vuelve sobre tus borradores y comparte las versiones que tú elijas.',
     'credentials' => 'Las credenciales no son correctas.',
     'untitled' => 'Documento sin título',

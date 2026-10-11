@@ -42,11 +42,13 @@ class ImageController
     public function show(Request $request, Document $document, DocumentImage $image): BinaryFileResponse
     {
         abort_unless($image->document_id === $document->id, 404);
-        $mayRead = $document->owner_id === $request->user()->id || DB::table('submissions')
-            ->join('document_versions', 'document_versions.id', '=', 'submissions.document_version_id')
-            ->where('document_versions.document_id', $document->id)
-            ->where('submissions.recipient_user_id', $request->user()->id)
-            ->where('document_versions.snapshot_html', 'like', '%'.$image->url().'%')->exists();
+        $version = \App\Support\VersionAccess::resolve($request, $document);
+        $mayRead = !$version || str_contains($version->snapshot_html, $image->url());
+        if ($version && !$mayRead && ($boundary = \App\Support\VersionAccess::boundary($version)) !== null) {
+            foreach ($boundary as $id => $head) {
+                if (\App\Models\WritingEvent::query()->where('writing_session_id', $id)->where('sequence', '<=', $head['sequence'])->where('id', '<=', $head['event_id'])->where('after_html', 'like', '%'.$image->url().'%')->exists()) { $mayRead = true; break; }
+            }
+        }
         abort_unless($mayRead && is_file($image->path()), 404);
         return response()->file($image->path(), [
             'Content-Type' => $image->mime,

@@ -44,3 +44,57 @@ La siguiente evolución de almacenamiento incorporará un esquema JSON versionad
 El editor no acepta HTML arbitrario del portapapeles. El pegado entra como texto plano y recibe una marca de procedencia. Al guardar, `DocumentSanitizer` aplica de nuevo una lista cerrada de elementos y atributos; las familias y tamaños tipográficos son identificadores controlados, no estilos CSS enviados por el cliente.
 
 Esta separación permite ampliar el editor sin convertir el documento en una superficie de scripts o estilos inyectados.
+
+## Lectura progresiva del historial
+
+El editor obtiene el borrador mediante el detalle y carga metadatos del proceso
+en segundo plano. `/timeline?metadata=1` devuelve hasta 1.000 eventos por página,
+sin HTML; `direct_words` permite conservar las fórmulas de PPM sin descargar
+instantáneas. `total`, `before_id` y `next_cursor` describen una lectura estable.
+Las páginas posteriores deben enviar el mismo `before_id` y el cursor devuelto.
+El orden es `server_received_at`, `sequence`, `id`; el último desempata las
+coincidencias que antes no tenían orden especificado. La cota de ID excluye
+inserciones posteriores, incluso con fecha anterior; la sesión local se combina
+por `(writing_session_id, sequence)` y no se pierde al llegar una página.
+
+La moviola solicita `snapshot_ids[]` (máximo 32 IDs del mismo documento) o
+`event_id`, conserva como máximo 64 instantáneas remotas y renderiza una ventana
+de 41 eventos alrededor de la selección. La selección mantiene su identidad
+cuando llegan páginas. Reproducción espera la instantánea pendiente. Errores y
+carga son explícitos y permiten reintentar. El borrador y su guardado no dependen
+del análisis histórico.
+
+La lectura sin `metadata` también está paginada: 50 eventos por defecto, máximo
+100 y aproximadamente 2 MB de HTML por página (siempre admite un primer evento).
+**Los clientes deben seguir `next_cursor`: ya no existe una respuesta completa
+implícita ni el recorte silencioso a 10.000.** Gzip sigue negociándose en todas
+las variantes correctas de esta ruta, sin cachear historiales privados. La ruta
+usa un cupo de lectura propio de 120/minuto para que las páginas y la reproducción
+no consuman el cupo de escritura de 60/minuto.
+
+PHP calcula `direct_words` sin normalizar Unicode ni alterar HTML persistido;
+MySQL se recorre sin buffer PDO durante esa consulta y el atributo se restaura
+al terminar. No hay migración, índices nuevos, cambio de HMAC, sellos ni formato
+de almacenamiento. El servidor aún analiza todas las instantáneas para completar
+las métricas: baja la transferencia y la memoria del cliente, no elimina ese
+trabajo ni demuestra concurrencia. Los eventos locales de la sesión activa
+conservan sus instantáneas; el historial remoto conserva únicamente metadatos.
+
+## Lectura de entregas y recuperación por identidad
+
+El detalle de entrega devuelve únicamente su versión. El proceso y las imágenes
+para un destinatario exigen `version_id` y autorización para esa versión concreta.
+Los sellos de formato 2 incorporan una frontera firmada por todas las sesiones;
+ingesta, guardado y captura del sello serializan mediante el bloqueo del documento.
+No se comparten historiales generales de versiones antiguas sin frontera firmada.
+La recuperación local incluye identidad, documento y formato; no se migra una
+entrada antigua sin propietario al usuario que entra después. Contrato, pruebas
+y límites en [SUBMISSION_PRIVACY.md](SUBMISSION_PRIVACY.md).
+
+### Protección de escrituras
+
+`documents.revision` se compara e incrementa bajo `FOR UPDATE` en cada PATCH.
+No se usa `updated_at` como token. Ingestas repetidas comparan el evento aceptado;
+`writing_events.request_hash` permite comprobar exactamente las solicitudes
+nuevas sin cambiar la cadena HMAC. Contrato y recuperación por copias en
+[CONCURRENCY_RECOVERY.md](CONCURRENCY_RECOVERY.md).

@@ -49,6 +49,7 @@ class DocumentController
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
         $data = $request->validate([
+            'revision' => ['required', 'integer', 'min:0'],
             'title' => ['sometimes', 'nullable', 'string', 'max:180'],
             'content_html' => ['sometimes', 'nullable', 'string', 'max:'.config('veritas.max_document_bytes')],
             'folder_id' => ['sometimes', 'nullable', 'uuid', Rule::exists('document_folders', 'id')->where('owner_id', $request->user()->id)],
@@ -57,17 +58,23 @@ class DocumentController
             'page_settings.orientation' => ['required_with:page_settings', Rule::in(['portrait', 'landscape'])],
             'page_settings.margin' => ['required_with:page_settings', 'integer', Rule::in([15, 20, 25, 30])],
         ]);
-        if (array_key_exists('folder_id', $data)) $document->folder_id = $data['folder_id'];
-        if (array_key_exists('page_settings', $data)) $document->page_settings = $data['page_settings'];
-        if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: __('inkgroove.untitled');
-        if (array_key_exists('content_html', $data)) {
-            $document->content_html = DocumentSanitizer::html((string) ($data['content_html'] ?? ''));
-            DocumentSanitizer::validateImages($document->content_html, $document->id);
-            $document->content_text = DocumentSanitizer::text($document->content_html);
-            $document->word_count = DocumentSanitizer::wordCount($document->content_text);
-            $document->last_session_at = now();
-        }
-        $document->save();
+        $document = DB::transaction(function () use ($document, $data) {
+            $document = Document::query()->lockForUpdate()->findOrFail($document->id);
+            abort_if((int) $document->revision !== (int) $data['revision'], 409, __('inkgroove.document_conflict'));
+            if (array_key_exists('folder_id', $data)) $document->folder_id = $data['folder_id'];
+            if (array_key_exists('page_settings', $data)) $document->page_settings = $data['page_settings'];
+            if (array_key_exists('title', $data)) $document->title = trim((string) ($data['title'] ?? '')) ?: __('inkgroove.untitled');
+            if (array_key_exists('content_html', $data)) {
+                $document->content_html = DocumentSanitizer::html((string) ($data['content_html'] ?? ''));
+                DocumentSanitizer::validateImages($document->content_html, $document->id);
+                $document->content_text = DocumentSanitizer::text($document->content_html);
+                $document->word_count = DocumentSanitizer::wordCount($document->content_text);
+                $document->last_session_at = now();
+            }
+            $document->revision = (int) $document->revision + 1;
+            $document->save();
+            return $document;
+        });
         return response()->json(['document' => $document]);
     }
 

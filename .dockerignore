@@ -1,4 +1,6 @@
 .git
+.dev-private
+.dev-backups
 .env
 .env.*
 node_modules

@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'document_conflict' => 'The document changed on the server. Keep your draft and inspect the remote state.',
+    'event_mismatch' => 'This sequence already contains a different event. Your local copy is retained.',
+
+    'legacy_history' => 'This older version has no verifiable process boundary. Only the sealed snapshot is shared.',
     'description' => 'Preserve your writing process, revisit your drafts and share the versions you choose.',
     'credentials' => 'The credentials are incorrect.',
     'untitled' => 'Untitled document',

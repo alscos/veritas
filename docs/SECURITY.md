@@ -32,3 +32,12 @@ Veritas certifica que el servidor recibió un contenido y una cadena concreta de
 7. Pruebas de autorización, CSRF, XSS, fuerza bruta y manipulación de eventos.
 8. Accesibilidad y reglas para dictado y tecnologías de apoyo.
 9. Revisión legal del texto del certificado y de los términos de uso.
+
+## Ámbito de entregas y almacenamiento local
+
+El contrato de versiones firmadas, limitación del proceso compartido, tratamiento
+conservador de sellos antiguos y recuperación local por identidad está en
+[SUBMISSION_PRIVACY.md](SUBMISSION_PRIVACY.md). El almacenamiento del navegador
+no está cifrado: su aislamiento entre cuentas de la interfaz no protege frente
+a quien tenga acceso al mismo perfil del sistema o pueda ejecutar JavaScript
+con el origen de la aplicación.

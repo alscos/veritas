@@ -199,6 +199,8 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .replay-paper { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow-y: auto; }
 .replay-meta { position: sticky; top: 0; min-height: 50px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,254,251,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(8px); font-size: .7rem; color: var(--muted); }
 .replay-meta strong { color: var(--ink); }
+.replay-meta > span { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
+.replay-status { font-size: inherit; color: var(--muted); }
 .replay-paper article { max-width: 760px; margin: 0 auto; padding: 68px; font: 400 1.08rem/1.82 Georgia, serif; white-space: pre-wrap; }
 .empty-replay { color: #9ba39f; }
 .event-rail { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }

@@ -1,0 +1,8 @@
+{
+  "scripts/chromium-real-run.py": "f20029c0bbd09a76c77425090a4f395d118180e55ea9933546b6f19ec8400b86",
+  "scripts/chromium-real-fixture.php": "bab182995f4694216025c52a1fdc1bc7c62021af1b29a10a483f28049f2e3cb5",
+  "scripts/chromium-real-probe.php": "d9b2160540562ca51863a318a1446167acebbfdae67af5cc60893356b2cc7cab",
+  "scripts/chromium-real-browser.mjs": "633c4bae56f49a7c8140f5f900244ddcd33e3ec0ac9bec05eb5c08f67eb03cd7",
+  "scripts/dev-remote.sh": "767dd01c5cee2935a9a887b94a809a86d3c8343f62c745fee041ad73c7ce2447",
+  "scripts/dev-server.sh": "96991a0e46be00f1061620dc1ce2aed3f66796be825588a4366d6a3daa87104b"
+}

@@ -15,7 +15,7 @@ Route::prefix('api')->middleware('throttle:60,1')->group(function (): void {
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:8,1');
     Route::get('/verify/{code}', [SealController::class, 'verify'])->where('code', 'VRT-[A-Z0-9]+');
 
-    Route::middleware('auth')->group(function (): void {
+    Route::middleware(['auth', \App\Http\Middleware\AuthenticatedIdentity::class])->group(function (): void {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/folders', [FolderController::class, 'index']);
@@ -29,9 +29,10 @@ Route::prefix('api')->middleware('throttle:60,1')->group(function (): void {
         Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
         Route::post('/documents/{document}/images', [ImageController::class, 'store'])->middleware('throttle:20,1,uploads');
         Route::post('/documents/{document}/events', [EventController::class, 'store']);
-        Route::get('/documents/{document}/timeline', [EventController::class, 'timeline']);
+        Route::get('/documents/{document}/timeline', [EventController::class, 'timeline'])->withoutMiddleware('throttle:60,1')->middleware(['throttle:120,1,history', \App\Http\Middleware\CompressTimeline::class]);
         Route::post('/documents/{document}/seal', [SealController::class, 'store']);
         Route::get('/submissions', [SubmissionController::class, 'index']);
+        Route::get('/submissions/{submission}', [SubmissionController::class, 'show']);
         Route::post('/submissions', [SubmissionController::class, 'store']);
     });
 });

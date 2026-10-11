@@ -1,0 +1,8 @@
+FROM node:22-bookworm-slim
+COPY package-lock.json /opt/inkgroove/package-lock.json
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/inkgroove/browsers
+RUN version=$(node -p "require('/opt/inkgroove/package-lock.json').packages['node_modules/playwright'].version") \
+    && npm install --prefix /opt/inkgroove --no-audit --no-fund "playwright@$version" \
+    && /opt/inkgroove/node_modules/.bin/playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace

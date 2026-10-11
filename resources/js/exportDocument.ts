@@ -168,14 +168,16 @@ export const exportRtf = (document: JSONContent, options: ExportOptions): string
   return `{\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0{\\fonttbl${fonts.map((font, index) => `{\\f${index} ${rtfText(font)};}`).join("")}}{\\colortbl;${colors.map(color => `\\red${parseInt(color.slice(1, 3), 16)}\\green${parseInt(color.slice(3, 5), 16)}\\blue${parseInt(color.slice(5, 7), 16)};`).join("")}}{\\info{\\title ${rtfText(options.title)}}}\\paperw${Math.round(width * 1440 / 25.4)}\\paperh${Math.round(height * 1440 / 25.4)}\\margl${margin}\\margr${margin}\\margt${margin}\\margb${margin}\n${body}}`;
 };
 
-export const loadExportImages = async (document: JSONContent, rtf = false): Promise<Record<string, ExportImage>> => {
+export const loadExportImages = async (document: JSONContent, rtf = false, mayRead: () => boolean = () => true): Promise<Record<string, ExportImage>> => {
   const sources = new Set<string>();
   const visit = (node: JSONContent) => { if (node.type === "image" && node.attrs?.src) sources.add(node.attrs.src); children(node).forEach(visit); }; visit(document);
   const entries = await Promise.all(Array.from(sources).map(async src => {
     if (!/^\/api\/documents\/[a-f0-9-]{36}\/images\/[a-f0-9-]{36}$/.test(src) && !/^data:image\/(png|jpeg|webp|gif);base64,/.test(src)) throw new Error(t("La imagen no tiene un origen válido."));
+    if (!mayRead()) throw new Error(t("Debes volver a identificarte para continuar."));
     const response = await fetch(src, { credentials: "same-origin" });
     if (!response.ok) throw new Error(t("No se pudo descargar una imagen. Comprueba tu sesión."));
     let blob = await response.blob();
+    if (!mayRead()) throw new Error(t("Debes volver a identificarte para continuar."));
     const url = URL.createObjectURL(blob);
     const image = new Image(); image.src = url;
     try {
@@ -191,8 +193,10 @@ export const loadExportImages = async (document: JSONContent, rtf = false): Prom
   return Object.fromEntries(entries);
 };
 const documentCanvas = (width: number, height: number) => { const canvas = window.document.createElement("canvas"); canvas.width = width; canvas.height = height; return canvas; };
-export const downloadEditable = async (document: JSONContent, options: ExportOptions, format: "odt" | "rtf") => {
-  const images = await loadExportImages(document, format === "rtf");
+export const downloadEditable = async (document: JSONContent, options: ExportOptions, format: "odt" | "rtf", mayDownload: () => boolean = () => true) => {
+  if (!mayDownload()) return;
+  const images = await loadExportImages(document, format === "rtf", mayDownload);
+  if (!mayDownload()) return;
   const result = format === "odt" ? exportOdt(document, { ...options, images }) : exportRtf(document, { ...options, images });
   const blob = new Blob([typeof result === "string" ? result : new Uint8Array(result).buffer], { type: format === "odt" ? "application/vnd.oasis.opendocument.text" : "application/rtf" });
   const url = URL.createObjectURL(blob);

@@ -17,15 +17,22 @@ class SubmissionController
         return response()->json(['sent' => $sent, 'received' => $received]);
     }
 
+    public function show(Request $request, Submission $submission): JsonResponse
+    {
+        abort_unless($submission->sender_id === $request->user()->id || $submission->recipient_user_id === $request->user()->id, 404);
+        $version = DocumentVersion::query()->with('certificate')->findOrFail($submission->document_version_id);
+        return response()->json(['submission' => $submission, 'version' => $version, 'history_available' => \App\Support\VersionAccess::boundary($version) !== null, 'history_notice' => \App\Support\VersionAccess::boundary($version) === null ? __('inkgroove.legacy_history') : null]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'document_version_id' => ['required', 'uuid', 'exists:document_versions,id'],
+            'document_version_id' => ['required', 'uuid'],
             'recipient_email' => ['required_without:assignment_id', 'nullable', 'email:rfc', 'max:255'],
             'assignment_id' => ['nullable', 'uuid', 'exists:assignments,id'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
-        $version = DocumentVersion::query()->with('document')->findOrFail($data['document_version_id']);
+        $version = DocumentVersion::query()->with('document')->whereHas('document', fn ($q) => $q->where('owner_id', $request->user()->id))->findOrFail($data['document_version_id']);
         abort_unless($version->document->owner_id === $request->user()->id, 404);
         $recipient = isset($data['recipient_email']) ? User::query()->where('email', mb_strtolower($data['recipient_email']))->first() : null;
         abort_if($recipient?->id === $request->user()->id, 422, __('inkgroove.self_submission'));

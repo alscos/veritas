@@ -1,0 +1,260 @@
+{
+  "run": "5d20900d-aa3d-4fa7-aa7b-ce4d0e7af0e1",
+  "budget_seconds": 600,
+  "consumed_seconds": 10.802,
+  "attempts": 1,
+  "started_at": "2026-10-10T22:39:03.427402+00:00",
+  "phases": [
+    {
+      "phase": "preflight",
+      "start_utc": "2026-10-10T22:39:03.464849+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:03.666368+00:00",
+      "elapsed_seconds": 0.201,
+      "exit_code": 0
+    },
+    {
+      "phase": "container_status",
+      "start_utc": "2026-10-10T22:39:03.667166+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:03.869799+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "php_syntax",
+      "start_utc": "2026-10-10T22:39:03.870544+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:04.072992+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "probe_syntax",
+      "start_utc": "2026-10-10T22:39:04.073742+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:04.276191+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "node_syntax",
+      "start_utc": "2026-10-10T22:39:04.276883+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:04.680547+00:00",
+      "elapsed_seconds": 0.403,
+      "exit_code": 0
+    },
+    {
+      "phase": "inventory_access",
+      "start_utc": "2026-10-10T22:39:04.681256+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:04.883580+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "initial_guards",
+      "start_utc": "2026-10-10T22:39:04.884304+00:00",
+      "end_utc": "2026-10-10T22:39:07.886161+00:00",
+      "elapsed_seconds": 3.002,
+      "exit_code": 0,
+      "cleanup_or_final_health": false
+    },
+    {
+      "phase": "probe_install",
+      "start_utc": "2026-10-10T22:39:07.887198+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:08.089325+00:00",
+      "elapsed_seconds": 0.201,
+      "exit_code": 0
+    },
+    {
+      "phase": "probe_ready",
+      "start_utc": "2026-10-10T22:39:08.089522+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:10.292305+00:00",
+      "elapsed_seconds": 2.203,
+      "exit_code": 0
+    },
+    {
+      "phase": "fixture",
+      "start_utc": "2026-10-10T22:39:10.293213+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:10.897696+00:00",
+      "elapsed_seconds": 0.604,
+      "exit_code": 0
+    },
+    {
+      "phase": "browser",
+      "start_utc": "2026-10-10T22:39:10.899017+00:00",
+      "cleanup_or_final_health": false,
+      "end_utc": "2026-10-10T22:39:13.108065+00:00",
+      "elapsed_seconds": 2.209,
+      "exit_code": 1
+    },
+    {
+      "phase": "fixture_clean",
+      "start_utc": "2026-10-10T22:39:13.109951+00:00",
+      "cleanup_or_final_health": true,
+      "end_utc": "2026-10-10T22:39:13.512478+00:00",
+      "elapsed_seconds": 0.402,
+      "exit_code": 0
+    },
+    {
+      "phase": "probe_remove",
+      "start_utc": "2026-10-10T22:39:13.513575+00:00",
+      "cleanup_or_final_health": true,
+      "end_utc": "2026-10-10T22:39:13.716141+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "final_status",
+      "start_utc": "2026-10-10T22:39:13.716965+00:00",
+      "cleanup_or_final_health": true,
+      "end_utc": "2026-10-10T22:39:13.919629+00:00",
+      "elapsed_seconds": 0.202,
+      "exit_code": 0
+    },
+    {
+      "phase": "final_health",
+      "start_utc": "2026-10-10T22:39:13.920578+00:00",
+      "end_utc": "2026-10-10T22:39:14.084798+00:00",
+      "elapsed_seconds": 0.164,
+      "exit_code": 0,
+      "cleanup_or_final_health": true
+    },
+    {
+      "phase": "absence",
+      "start_utc": "2026-10-10T22:39:14.084815+00:00",
+      "cleanup_or_final_health": true,
+      "end_utc": "2026-10-10T22:39:14.286365+00:00",
+      "elapsed_seconds": 0.201,
+      "exit_code": 0
+    }
+  ],
+  "inventory": {
+    "document_id": "01cd7325-d3e4-430b-963a-ecd40eba848e",
+    "seed_sessions": [
+      "6ceebf66-2fe4-4c15-8827-7f86af700cac",
+      "d2919874-3b58-4f27-86bc-0230a917f14f"
+    ],
+    "runner_name": "inkgroove-chromium-real-5d20900d",
+    "temporary_config": "/etc/apache2/conf-enabled/inkgroove-chromium-real.conf",
+    "session_registry_path": "/tmp/inkgroove-chromium-real-5d20900d-aa3d-4fa7-aa7b-ce4d0e7af0e1.jsonl"
+  },
+  "guard_stop": [],
+  "preflight": {
+    "apache_processes": 3,
+    "pool_config": "<IfModule mpm_prefork_module>\nStartServers 2\nMinSpareServers 2\nMaxSpareServers 2\nServerLimit 2\nMaxRequestWorkers 2\nMaxConnectionsPerChild 500\n</IfModule>\n",
+    "syntax_ok": true,
+    "prefork": true
+  },
+  "seed": {
+    "seeded_events": 1800,
+    "user_id": 67,
+    "document_id": "01cd7325-d3e4-430b-963a-ecd40eba848e"
+  },
+  "trial_passed": false,
+  "failure": "Phase failed: browser",
+  "cleanup": {
+    "remaining_inventoried_rows": 0,
+    "anonymous_sessions_removed": 0,
+    "tracked_session_hashes": 2,
+    "user_id": 67,
+    "document_id": "01cd7325-d3e4-430b-963a-ecd40eba848e",
+    "removed_editorial_sessions": 2,
+    "removed_versions": 0
+  },
+  "final_dev_health": {
+    "ok": true,
+    "milliseconds": 164.18
+  },
+  "runner_absent": true,
+  "cleanup_verified": true,
+  "resources": {
+    "samples": 4,
+    "available_min_mib": 909.94921875,
+    "disk_free_min_gib": 29.895591735839844,
+    "swap_growth_mib": 0.0,
+    "dev_health_failures": 0,
+    "existing_health_failures": 0,
+    "initial_available_mib": 957.0234375,
+    "allowed_cpus": [
+      10,
+      4
+    ]
+  },
+  "browser": {
+    "real_backend": true,
+    "attempt": 1,
+    "seed_events": 1800,
+    "network": {
+      "latency_ms": 40,
+      "download_bytes_per_second": 1250000,
+      "upload_bytes_per_second": 1250000
+    },
+    "samples": [
+      {
+        "opening": "cold",
+        "editor_available_ms": 366,
+        "metrics_complete_ms": 565
+      }
+    ],
+    "checks": {
+      "real_login": true,
+      "write_during_load_observed": true,
+      "loading_before_typing": true,
+      "loading_after_typing": true
+    },
+    "browser_version": "151.0.7922.34",
+    "passed": false,
+    "failed_stage": "save",
+    "error_type": "AssertionError",
+    "http_responses": [
+      {
+        "method": "GET",
+        "operation": "identity",
+        "status": 401
+      },
+      {
+        "method": "POST",
+        "operation": "login",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "operation": "other",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "operation": "other",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "operation": "other",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "operation": "timeline",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "operation": "timeline",
+        "status": 200
+      },
+      {
+        "method": "PATCH",
+        "operation": "other",
+        "status": 419
+      }
+    ],
+    "page_errors": []
+  },
+  "finished_at": "2026-10-10T22:39:14.301264+00:00"
+}

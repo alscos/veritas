@@ -1,8 +1,8 @@
 import { t, getLocale, useLocale } from "./i18n";
 import LanguageSwitcher from "./LanguageSwitcher";
 import EntryStory from "./EntryStory";
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
+import { FormEvent, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError, SESSION_EXPIRED_EVENT, authenticatedIdentity, resetIdentity } from "./api";
 import type { Certificate, DocumentFolder, DocumentVersion, PageSettings, Submission, User, VeritasDocument, WritingEvent } from "./types";
 import type { EditorMutation, VeritasEditorHandle } from "./VeritasEditor";
 import DocumentsWorkspace from "./DocumentsWorkspace";
@@ -10,26 +10,17 @@ import { DEFAULT_PAGE } from "./pageLayout";
 import brandLogo from "../brand/InkGroove-logo-tinta-naranja.svg";
 import brandLogoLight from "../brand/InkGroove-logo-tinta-claro.svg";
 
+import { analyzeHtml, lastRecordedPpm, timingAnalysis } from "./writingMetrics";
+import { mergeHistory, historyWindow, eventKey, type HistoryPage } from "./history";
+import { useTimelineSnapshots } from "./useTimelineSnapshots";
+
 const VeritasEditor = lazy(() => import("./VeritasEditor"));
 
 declare global { interface Window { __VERITAS_USER__?: User | null } }
 
 type View = "documents" | "editor" | "timeline" | "submissions";
 type AuthMode = "login" | "register";
-type EditorRecovery = { savedAt: number; html: string; title: string; page?: PageSettings; folderId?: string | null; sessionId: string; startedAt: number; sequence: number; pending: WritingEvent[] };
-
-const recoveryKey = (documentId: string) => `veritas:recovery:${documentId}`;
-const clearRecovery = (documentId: string) => {
-  try { localStorage.removeItem(recoveryKey(documentId)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
-};
-const loadRecovery = (documentId: string, serverUpdatedAt: string): EditorRecovery | null => {
-  try {
-    const raw = localStorage.getItem(recoveryKey(documentId)); if (!raw) return null;
-    const recovery = JSON.parse(raw) as EditorRecovery;
-    if (typeof recovery.html !== "string" || !recovery.sessionId || !Array.isArray(recovery.pending) || recovery.savedAt <= new Date(serverUpdatedAt).getTime()) { clearRecovery(documentId); return null; }
-    return recovery;
-  } catch { return null; }
-};
+import { recoveryKey, clearRecovery, listRecoveries, type EditorRecovery } from "./recovery";
 
 const now = new Date();
 const iso = (offsetMinutes = 0) => new Date(now.getTime() + offsetMinutes * 60_000).toISOString();
@@ -61,94 +52,7 @@ const demoEvents: WritingEvent[] = [
 ];
 
 const words = (text: string) => text.trim() ? (text.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'’_-]*/gu) ?? []).length : 0;
-type Provenance = "direct" | "paste" | "paste-edited";
-const blockTags = new Set(["DIV", "P", "H1", "H2", "H3", "LI", "BLOCKQUOTE", "UL", "OL", "TD", "TH", "TR"]);
-const analyzeHtml = (html: string) => {
-  const root = document.createElement("div"); root.innerHTML = html;
-  let source = ""; const provenance: Provenance[] = [];
-  const append = (text: string, origin: Provenance) => { source += text; for (let index = 0; index < text.length; index++) provenance.push(origin); };
-  const visit = (node: Node, inherited: Provenance) => {
-    if (node.nodeType === Node.TEXT_NODE) { append(node.textContent ?? "", inherited); return; }
-    if (!(node instanceof HTMLElement)) return;
-    let origin = inherited;
-    if (node.tagName === "MARK" && node.dataset.origin === "paste") origin = "paste";
-    if (node.tagName === "MARK" && node.dataset.origin === "paste-edited") origin = "paste-edited";
-    if (node.tagName === "BR") { append("\n", origin); return; }
-    Array.from(node.childNodes).forEach(child => visit(child, origin));
-    if (blockTags.has(node.tagName)) append("\n", origin);
-  };
-  Array.from(root.childNodes).forEach(child => visit(child, "direct"));
-  const counts = { direct: 0, pasted: 0, edited: 0, total: 0 };
-  for (const match of source.matchAll(/[\p{L}\p{N}][\p{L}\p{N}\p{M}'’_-]*/gu)) {
-    const start = match.index ?? 0; const end = start + match[0].length;
-    const origins = new Set(provenance.slice(start, end)); counts.total++;
-    if (origins.has("paste-edited")) counts.edited++;
-    else if (origins.has("paste")) counts.pasted++;
-    else counts.direct++;
-  }
-  return { ...counts, text: source.replace(/\u200b/g, "").replace(/\s+/gu, " ").trim() };
-};
 const plainText = (html: string) => analyzeHtml(html).text;
-
-const ppmForSession = (events: WritingEvent[]): number | null => {
-  if (!events.length) return null;
-  const startDirect = analyzeHtml(events[0].after_html ?? "").direct;
-  const finalDirect = analyzeHtml(events.at(-1)?.after_html ?? "").direct;
-  const writtenWords = Math.max(0, finalDirect - startDirect);
-  const firstWriting = events.find(event => event.event_type === "insert" && event.input_type !== "insertFromPaste" && analyzeHtml(event.after_html ?? "").direct > startDirect);
-  const elapsed = firstWriting ? (events.at(-1)?.elapsed_ms ?? 0) - firstWriting.elapsed_ms : 0;
-  return writtenWords >= 3 && elapsed >= 5_000 ? Math.round((writtenWords / elapsed) * 60_000) : null;
-};
-
-const groupSessions = (events: WritingEvent[]): WritingEvent[][] => {
-  const sessions: WritingEvent[][] = [];
-  for (const event of events) {
-    const previous = sessions.at(-1)?.at(-1);
-    const newSession = !previous || (event.writing_session_id && previous.writing_session_id && event.writing_session_id !== previous.writing_session_id) || event.sequence <= previous.sequence;
-    if (newSession) sessions.push([]);
-    sessions.at(-1)!.push(event);
-  }
-  return sessions;
-};
-
-const lastRecordedPpm = (events: WritingEvent[]): number | null => {
-  const sessions = groupSessions(events);
-  for (let index = sessions.length - 1; index >= 0; index--) {
-    const ppm = ppmForSession(sessions[index]); if (ppm !== null) return ppm;
-  }
-  return null;
-};
-
-const PAUSE_THRESHOLD_MS = 5_000;
-const timingAnalysis = (events: WritingEvent[]) => {
-  const result = { totalMs: 0, writingMs: 0, revisionMs: 0, pauseMs: 0, pauseCount: 0, awayMs: 0 };
-  const contentTypes = new Set<WritingEvent["event_type"]>(["insert", "delete", "paste", "paste_edit", "format"]);
-  for (const session of groupSessions(events)) {
-    if (!session.length) continue;
-    const sessionEnd = Math.max(...session.map(event => event.elapsed_ms)); result.totalMs += sessionEnd;
-    const away: Array<[number, number]> = []; let awayStart: number | null = null;
-    for (const event of session) {
-      if (event.event_type === "blur" && awayStart === null) awayStart = event.elapsed_ms;
-      if (event.event_type === "focus" && awayStart !== null) { away.push([awayStart, event.elapsed_ms]); awayStart = null; }
-    }
-    if (awayStart !== null) away.push([awayStart, sessionEnd]);
-    result.awayMs += away.reduce((sum, [start, end]) => sum + Math.max(0, end - start), 0);
-    const focusedDuration = (start: number, end: number) => Math.max(0, end - start - away.reduce((sum, [awayFrom, awayTo]) => sum + Math.max(0, Math.min(end, awayTo) - Math.max(start, awayFrom)), 0));
-    const contentEvents = session.filter(event => contentTypes.has(event.event_type));
-    if (!contentEvents.length) continue;
-    let previous = session[0].elapsed_ms;
-    for (const event of contentEvents) {
-      const gap = focusedDuration(previous, event.elapsed_ms);
-      if (gap >= PAUSE_THRESHOLD_MS) { result.pauseCount++; result.pauseMs += gap; }
-      else if (event.event_type === "insert") result.writingMs += gap;
-      else result.revisionMs += gap;
-      previous = event.elapsed_ms;
-    }
-    const tail = focusedDuration(previous, sessionEnd);
-    if (tail >= PAUSE_THRESHOLD_MS) { result.pauseCount++; result.pauseMs += tail; }
-  }
-  return result;
-};
 const makeId = () => {
   if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
   const bytes = new Uint8Array(16);
@@ -223,18 +127,54 @@ function Shell({ user, view, setView, demo, children, onLogout }: { user: User; 
   </div>;
 }
 
-function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; folders: DocumentFolder[]; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
-  const recovery = useMemo(() => loadRecovery(initial.id, initial.updated_at), [initial.id, initial.updated_at]);
+function EditorView(props: { initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; folders: DocumentFolder[]; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
+  const [copies] = useState(() => props.demo ? [] : listRecoveries(props.initial.id, props.initial.owner_id));
+  const [choice, setChoice] = useState<EditorRecovery | null | undefined>(copies.length ? undefined : null);
+  if (choice === undefined) return <div className="workspace"><h2>{t("Copias locales pendientes")}</h2><p>{t("Elige una copia para revisarla. No se sobrescribirá una revisión remota más reciente.")}</p>{copies.map(copy => <button key={copy.storageKey} onClick={() => setChoice(copy)}>{copy.title} · {plainText(copy.html).slice(0, 100)} · {new Date(copy.savedAt).toLocaleString()} · {copy.pending.length} {t("eventos")}</button>)}<button onClick={() => setChoice(null)}>{t("Consultar estado del servidor")}</button></div>;
+  return <EditorWorkspace {...props} recovery={choice} />;
+}
+
+function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBack, onPersist }: { recovery: EditorRecovery | null; initial: VeritasDocument; initialEvents: WritingEvent[]; demo: boolean; folders: DocumentFolder[]; onBack: () => void; onPersist: (document: VeritasDocument) => void }) {
   const initialHtml = recovery?.html ?? (typeof initial.content_html === "string" ? initial.content_html : "");
   const [documentState, setDocumentState] = useState(initial);
   const [events, setEvents] = useState<WritingEvent[]>([...initialEvents, ...(recovery?.pending ?? [])]);
+  const [history, setHistory] = useState<WritingEvent[]>(initialEvents);
+  const [historyState, setHistoryState] = useState<"loading" | "ready" | "error">(demo ? "ready" : "loading");
+  const [historyTotal, setHistoryTotal] = useState(initialEvents.length);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    setHistoryState("loading");
+    void (async () => {
+      let cursor: string | null = null; let watermark: number | undefined; let loaded: WritingEvent[] = [];
+      try {
+        do {
+          const query = new URLSearchParams({ metadata: "1", limit: "1000" });
+          if (watermark !== undefined) query.set("before_id", String(watermark));
+          if (cursor) query.set("cursor", cursor);
+          const page = await api<HistoryPage>(`/documents/${initial.id}/timeline?${query}`);
+          if (cancelled) return;
+          watermark = page.before_id; cursor = page.next_cursor;
+          loaded = mergeHistory(loaded, page.events);
+          setHistory(loaded); setHistoryTotal(page.total ?? loaded.length);
+          // Yield between requests so typing and painting are never blocked by a full history.
+          await new Promise(resolve => window.setTimeout(resolve, 0));
+        } while (cursor);
+        if (!cancelled) setHistoryState("ready");
+      } catch { if (!cancelled) setHistoryState("error"); }
+    })();
+    return () => { cancelled = true; };
+  }, [initial.id, demo, historyAttempt]);
+  const allEvents = useMemo(() => mergeHistory(history, events), [history, events]);
   const [title, setTitle] = useState(recovery?.title ?? initial.title);
+  const titleRef = useRef(title); titleRef.current = title;
   const [html, setHtml] = useState(initialHtml);
   const [page, setPage] = useState<PageSettings>(recovery?.page ?? initial.page_settings ?? DEFAULT_PAGE);
   const [folderId, setFolderId] = useState<string | null>(recovery?.folderId !== undefined ? recovery.folderId : initial.folder_id ?? null);
   const pageRef = useRef(page);
   const folderRef = useRef(folderId);
-  const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired">(recovery ? "saving" : "saved");
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired" | "conflict">(recovery ? "error" : "saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
   const [showSend, setShowSend] = useState(false);
@@ -243,6 +183,12 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   const [firstTypingAt, setFirstTypingAt] = useState<number | null>(null);
   const [metricNow, setMetricNow] = useState(Date.now());
   const editorRef = useRef<VeritasEditorHandle>(null);
+  const recoverySlot = useRef(makeId());
+  const remoteRevision = useRef(recovery ? recovery.baseRevision ?? -1 : initial.revision ?? 0);
+  const conflicted = useRef(!!recovery && remoteRevision.current !== (initial.revision ?? 0));
+  const retryBlocked = useRef(false);
+  const [localStored, setLocalStored] = useState(false);
+  const [remotePreview, setRemotePreview] = useState<VeritasDocument | null>(null);
   const sessionId = useRef(recovery?.sessionId ?? makeId());
   const started = useRef(recovery?.startedAt ?? Date.now());
   const sequence = useRef(recovery?.sequence ?? 0);
@@ -260,9 +206,9 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   const sessionDirectWords = Math.max(0, analysis.direct - initialDirectWords.current);
   const typingElapsedMs = firstTypingAt === null ? 0 : metricNow - firstTypingAt;
   const sessionPpm = sessionDirectWords >= 3 && typingElapsedMs >= 5_000 ? Math.round((sessionDirectWords / typingElapsedMs) * 60_000) : null;
-  const previousPpm = useMemo(() => lastRecordedPpm(initialEvents), [initialEvents]);
+  const previousPpm = useMemo(() => historyState === "ready" ? lastRecordedPpm(history) : null, [history, historyState]);
   const displayedPpm = sessionPpm ?? previousPpm;
-  const timing = useMemo(() => timingAnalysis(events), [events]);
+  const timing = useMemo(() => timingAnalysis(allEvents), [allEvents]);
 
   useEffect(() => {
     record(recovery ? "focus" : "start", null, null, initialHtml);
@@ -270,8 +216,8 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { if (!sessionExpired.current && pending.current.length) void syncEvents(); }, 1200);
-    return () => { window.clearInterval(timer); void syncEvents(); };
+    const timer = window.setInterval(() => { if (!sessionExpired.current && !retryBlocked.current && !conflicted.current && pending.current.length) void syncEvents(); }, 1200);
+    return () => { window.clearInterval(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -290,35 +236,48 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
     return () => window.removeEventListener("beforeunload", warnIfPending);
   }, []);
 
-  const persistLocalRecovery = (contentHtml = editorRef.current?.getHTML() ?? html, recoveryTitle = title) => {
-    try { localStorage.setItem(recoveryKey(documentState.id), JSON.stringify({ savedAt: Date.now(), html: contentHtml, title: recoveryTitle, page: pageRef.current, folderId: folderRef.current, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current } satisfies EditorRecovery)); } catch { /* Storage can be unavailable in hardened browser modes. */ }
+  const persistLocalRecovery = (contentHtml = editorRef.current?.getHTML() ?? html, recoveryTitle = titleRef.current) => {
+    if (demo) return true;
+    try { localStorage.setItem(recoveryKey(documentState.id, initial.owner_id, recoverySlot.current), JSON.stringify({ format: 2, ownerId: initial.owner_id, documentId: initial.id, savedAt: Date.now(), html: contentHtml, title: recoveryTitle, page: pageRef.current, folderId: folderRef.current, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current, baseRevision: remoteRevision.current } satisfies EditorRecovery)); setLocalStored(true); return true; } catch { setLocalStored(false); return false; }
   };
+  useEffect(() => { if (changeRevision.current > lastSavedRevision.current) persistLocalRecovery(); }, [title, page, folderId]);
+  const recoveryWriter = useRef<() => void>(() => undefined);
+  recoveryWriter.current = () => { if (changeRevision.current > lastSavedRevision.current || pending.current.length) persistLocalRecovery(); };
+  useEffect(() => {
+    sessionExpired.current = false;
+    const retain = () => { sessionExpired.current = true; recoveryWriter.current(); };
+    window.addEventListener(SESSION_EXPIRED_EVENT, retain);
+    return () => { retain(); window.removeEventListener(SESSION_EXPIRED_EVENT, retain); };
+  }, []);
   const expireSession = () => { sessionExpired.current = true; persistLocalRecovery(); setSaveState("expired"); };
   const record = (eventType: WritingEvent["event_type"], inputType: string | null, data?: string | null, nextHtml?: string) => {
     const event: WritingEvent = { writing_session_id: sessionId.current, sequence: ++sequence.current, event_type: eventType, input_type: inputType, data: data ?? null, after_html: nextHtml ?? editorRef.current?.getHTML() ?? html, elapsed_ms: Date.now() - started.current, created_at: new Date().toISOString() };
     pending.current.push(event); setEvents(previous => [...previous, event]);
-    if (sessionExpired.current) persistLocalRecovery(event.after_html);
+    persistLocalRecovery(editorRef.current?.getHTML() ?? event.after_html);
   };
   const syncEvents = async (): Promise<boolean> => {
-    if (sessionExpired.current) return false;
+    if (conflicted.current || sessionExpired.current || (!demo && authenticatedIdentity() !== initial.owner_id)) return false;
     if (demo) { pending.current = []; return true; }
     if (syncInFlight.current) {
       const synced = await syncInFlight.current;
       return synced && pending.current.length ? syncEvents() : synced;
     }
-    const batch = [...pending.current]; if (!batch.length) return true;
+    const batch = pending.current.slice(0, 250); if (!batch.length) return true;
     const operation = (async () => {
       try {
         await api(`/documents/${documentState.id}/events`, { method: "POST", body: JSON.stringify({ session_id: sessionId.current, started_at: new Date(started.current).toISOString(), events: batch }) });
-        pending.current.splice(0, batch.length); return true;
-      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) expireSession(); else setSaveState("error"); return false; }
+        pending.current.splice(0, batch.length); if (changeRevision.current > lastSavedRevision.current || pending.current.length) persistLocalRecovery(); else { clearRecovery(documentState.id, initial.owner_id, recoverySlot.current); setLocalStored(false); } return true;
+      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) expireSession(); else { retryBlocked.current = true; if (reason instanceof ApiError && reason.status === 409) { conflicted.current = true; setSaveState("conflict"); } else setSaveState("error"); persistLocalRecovery(); } return false; }
     })();
     syncInFlight.current = operation;
     const synced = await operation;
     if (syncInFlight.current === operation) syncInFlight.current = null;
-    return synced;
+    return synced && pending.current.length ? syncEvents() : synced;
   };
   const save = async (): Promise<boolean> => {
+    if (conflicted.current) { persistLocalRecovery(); setSaveState("conflict"); return false; }
+    retryBlocked.current = false;
+    if (!demo && authenticatedIdentity() !== initial.owner_id) return false;
     if (editorRef.current && !await editorRef.current.waitForUploads()) return false;
     if (sessionExpired.current) { persistLocalRecovery(); return false; }
     if (saveInFlight.current) {
@@ -330,21 +289,23 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
     const snapshotTitle = title;
     const snapshotPage = pageRef.current;
     const snapshotFolder = folderRef.current;
+    persistLocalRecovery(contentHtml, snapshotTitle);
     setHtml(contentHtml); setSaveState("saving");
     const operation = (async () => {
       const updated: VeritasDocument = { ...documentState, title: snapshotTitle, folder_id: snapshotFolder, page_settings: snapshotPage, content_html: contentHtml, content_text: plainText(contentHtml), word_count: words(plainText(contentHtml)), updated_at: new Date().toISOString() };
       try {
         let persisted = updated;
         if (!demo) {
-          const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ title: snapshotTitle, folder_id: snapshotFolder, page_settings: snapshotPage, content_html: contentHtml }) });
+          const result = await api<{ document: VeritasDocument }>(`/documents/${documentState.id}`, { method: "PATCH", body: JSON.stringify({ revision: remoteRevision.current, title: snapshotTitle, folder_id: snapshotFolder, page_settings: snapshotPage, content_html: contentHtml }) });
           persisted = { ...updated, ...result.document };
         }
-        setDocumentState(persisted); record("save", null, null, contentHtml);
+        remoteRevision.current = persisted.revision ?? remoteRevision.current;
+        setDocumentState(persisted); record("save", null, JSON.stringify({ document_revision: remoteRevision.current }), contentHtml);
         if (!await syncEvents()) return false;
         lastSavedRevision.current = Math.max(lastSavedRevision.current, revision);
-        if (revision === changeRevision.current) clearRecovery(documentState.id);
+        if (revision === changeRevision.current) { clearRecovery(documentState.id, initial.owner_id, recoverySlot.current); setLocalStored(false); if (recovery?.storageKey) { try { localStorage.removeItem(recovery.storageKey); } catch { /* Retain if unavailable. */ } } }
         onPersist(persisted); setSaveState(revision === changeRevision.current ? "saved" : "saving"); return true;
-      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) { persistLocalRecovery(contentHtml, snapshotTitle); expireSession(); } else setSaveState("error"); return false; }
+      } catch (reason) { if (reason instanceof ApiError && (reason.status === 419 || reason.status === 401)) { persistLocalRecovery(contentHtml, snapshotTitle); expireSession(); } else { retryBlocked.current = true; if (reason instanceof ApiError && reason.status === 409) { conflicted.current = true; setSaveState("conflict"); } else setSaveState("error"); persistLocalRecovery(); } return false; }
     })();
     saveInFlight.current = operation;
     const saved = await operation;
@@ -359,7 +320,7 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html, title, page, folderId, saveState]);
 
-  const markChanged = () => { changeRevision.current++; if (sessionExpired.current) { persistLocalRecovery(); setSaveState("expired"); } else setSaveState("saving"); };
+  const markChanged = () => { changeRevision.current++; if (sessionExpired.current) { persistLocalRecovery(); setSaveState("expired"); } else if (conflicted.current) { persistLocalRecovery(); setSaveState("conflict"); } else setSaveState("saving"); };
   const editorMutation = (mutation: EditorMutation) => {
     setHtml(mutation.html);
     if (mutation.eventType === "insert" && mutation.inputType !== "insertFromPaste" && mutation.data) setFirstTypingAt(previous => previous ?? Date.now());
@@ -380,7 +341,7 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
   const openTimeline = async () => {
     const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
     if (!ready) return;
-    setTimelineIndex(Math.max(0, events.length - 1)); setTimelineOpen(true);
+    setTimelineIndex(Math.max(0, allEvents.length - 1)); setTimelineOpen(true);
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
   const seal = async () => {
@@ -400,7 +361,7 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
       const next = { ...documentState, versions: [...(documentState.versions ?? []), version], versions_count: (documentState.versions_count ?? 0) + 1 }; setDocumentState(next); onPersist(next);
     } catch { setSaveState("error"); }
   };
-  if (timelineOpen) return <Timeline events={events} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
+  if (timelineOpen) return <Timeline events={allEvents} documentId={demo ? undefined : initial.id} loading={historyState === "loading"} historyError={historyState === "error"} onRetryHistory={() => setHistoryAttempt(value => value + 1)} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
   return <main className="editor-layout">
     <aside className="document-context">
       <button className="back-link" onClick={() => void leaveEditor()}>{t("← Mis documentos")}</button>
@@ -410,38 +371,62 @@ function EditorView({ initial, initialEvents, demo, folders, onBack, onPersist }
       <div className="privacy-note"><span>⌁</span><p><strong>{t("Solo tú puedes verlo.")}</strong><br />{t("El acceso cambia únicamente al entregar una versión.")}</p></div>
     </aside>
     <section className="writing-surface">
-      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label={t("Título")}/><span>{t("Sesión activa · registro local y servidor")}</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>{t("Sesión caducada · volver a entrar")}</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? t("Todo guardado") : saveState === "saving" ? t("Guardando…") : t("Error al guardar")}</span>}</div>
+      <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label={t("Título")}/><span>{t("Sesión activa · registro local y servidor")}</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>{t("Sesión caducada · volver a entrar")}</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? t("Todo guardado") : saveState === "saving" ? t("Guardando…") : saveState === "conflict" ? (localStored ? t("Conflicto · copia local conservada") : t("Conflicto · sin copia local confirmada")) : (localStored ? t("Error al guardar · copia local conservada") : t("Error al guardar · sin copia local confirmada"))}</span>}</div>
       <div className="paper">
         <Suspense fallback={<div className="editor-loading">{t("Preparando el documento…")}</div>}>
           <VeritasEditor ref={editorRef} initialHtml={html} title={title} page={page} onPageChange={changePage} beforeExport={save} onUploadImage={uploadImage} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
         </Suspense>
       </div>
+      <p>{localStored ? t("Copia local disponible en este navegador") : t("Sin copia local confirmada")}</p>
+      {(saveState === "conflict" || saveState === "error" || conflicted.current) && <div role="alert"><p>{t("Tu borrador permanece aquí. No se mezclará ni sobrescribirá el servidor automáticamente.")}</p><button onClick={() => { persistLocalRecovery(); const blob = new Blob([JSON.stringify({ format: 2, ownerId: initial.owner_id, documentId: initial.id, savedAt: Date.now(), html: editorRef.current?.getHTML() ?? html, title, page: pageRef.current, folderId: folderRef.current, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current, baseRevision: remoteRevision.current }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "inkgroove-draft.json"; a.click(); URL.revokeObjectURL(url); }}>{t("Conservar borrador en un archivo")}</button><button onClick={() => { if (persistLocalRecovery()) onBack(); }}>{t("Volver a mis documentos conservando la copia local")}</button><button onClick={() => { void api<{ document: VeritasDocument }>(`/documents/${initial.id}`).then(result => setRemotePreview(result.document)).catch(() => setSaveState("error")); }}>{t("Consultar estado del servidor")}</button>{remotePreview && <div><p>{t("Revisión del servidor")}: {remotePreview.revision} · {remotePreview.title}</p><pre>{remotePreview.content_text}</pre></div>}</div>}
       <div className="editor-actions"><span>{currentWordCount} {t("palabras")}</span><div><button className="secondary" onClick={() => void save()}>{t("Guardar ahora")}</button><button className="secondary" onClick={() => void openTimeline()}>{t("Ver proceso")}</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>{t("Sellar versión")}</button></div></div>
     </section>
     <aside className="evidence-panel">
-      <div className="live-title"><span><i></i>{t("Registro en directo")}</span><small>{events.length} {t("eventos")}</small></div>
-      <div className="metric-hero"><span>{sessionPpm !== null ? t("Ritmo de esta sesión") : previousPpm !== null ? t("Último ritmo registrado") : t("Ritmo de esta sesión")}</span><strong>{displayedPpm ?? "—"}<em> {t("ppm")}</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
-      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>{t("Escritura directa")}<strong>{analysis.direct} {t("palabras")}</strong></p></li><li><span className="metric-icon pasted">□</span><p>{t("Pegado sin modificar")}<strong>{pasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon revised">↺</span><p>{t("Pegado reelaborado")}<strong>{editedPasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon history">◷</span><p>{t("Tiempo total registrado")}<strong>{duration(timing.totalMs)}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>{t("Escritura activa estimada")}<strong>{duration(timing.writingMs)}</strong></p></li><li><span className="metric-icon revised">✎</span><p>{t("Edición activa estimada")}<strong>{duration(timing.revisionMs)}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>{t("Pausas de al menos 5 s")}<strong>{timing.pauseCount} · {duration(timing.pauseMs)}</strong></p></li><li><span className="metric-icon away">↗</span><p>{t("Fuera del editor")}<strong>{duration(timing.awayMs)}</strong></p></li></ul>
+      <div className="live-title"><span><i></i>{t("Registro en directo")}</span><small>{historyState === "ready" ? allEvents.length : `${history.length}/${historyTotal}`} {t("eventos")}</small></div>
+      {historyState === "loading" && <p role="status">{t("Cargando historial…")}</p>}
+      {historyState === "error" && <p role="alert">{t("No se pudo cargar el historial.")} <button onClick={() => setHistoryAttempt(value => value + 1)}>{t("Reintentar")}</button></p>}
+      <div className="metric-hero"><span>{sessionPpm !== null ? t("Ritmo de esta sesión") : previousPpm !== null ? t("Último ritmo registrado") : t("Ritmo de esta sesión")}</span><strong>{displayedPpm ?? (historyState !== "ready" ? t("Cargando…") : "—")}<em> {t("ppm")}</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
+      <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>{t("Escritura directa")}<strong>{analysis.direct} {t("palabras")}</strong></p></li><li><span className="metric-icon pasted">□</span><p>{t("Pegado sin modificar")}<strong>{pasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon revised">↺</span><p>{t("Pegado reelaborado")}<strong>{editedPasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon history">◷</span><p>{t("Tiempo total registrado")}<strong>{historyState === "ready" ? duration(timing.totalMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>{t("Escritura activa estimada")}<strong>{historyState === "ready" ? duration(timing.writingMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon revised">✎</span><p>{t("Edición activa estimada")}<strong>{historyState === "ready" ? duration(timing.revisionMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>{t("Pausas de al menos 5 s")}<strong>{historyState === "ready" ? `${timing.pauseCount} · ${duration(timing.pauseMs)}` : t("Cargando…")}</strong></p></li><li><span className="metric-icon away">↗</span><p>{t("Fuera del editor")}<strong>{historyState === "ready" ? duration(timing.awayMs) : t("Cargando…")}</strong></p></li></ul>
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>{t("Abrir la moviola")}</strong><br />{t("Reconstruye el documento evento a evento.")}</p></button>
       {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>{t("Última versión certificada")}</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>{t("Entregar")}</button></div>}
     </aside>
-    {showSeal && <Modal title={t("Sellar esta versión")} onClose={() => setShowSeal(false)}><p>{t("Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.")}</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>{t("palabras")}</span><strong>{events.length}</strong><span>{t("eventos")}</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>{t("Cancelar")}</button><button className="primary" onClick={() => void seal()}>{t("Certificar versión")}</button></div></Modal>}
+    {showSeal && <Modal title={t("Sellar esta versión")} onClose={() => setShowSeal(false)}><p>{t("Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.")}</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>{t("palabras")}</span><strong>{historyState === "ready" ? allEvents.length : t("Cargando…")}</strong><span>{t("eventos")}</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>{t("Cancelar")}</button><button className="primary" onClick={() => void seal()}>{t("Certificar versión")}</button></div></Modal>}
     {showSend && certificate && <SendModal certificate={certificate} demo={demo} documentState={documentState} onClose={() => setShowSend(false)} />}
   </main>;
 }
 
-function Timeline({ events, title, onClose, index, setIndex }: { events: WritingEvent[]; title: string; onClose: () => void; index: number; setIndex: (index: number) => void }) {
+export function Timeline({ events, documentId, loading, historyError, onRetryHistory, title, onClose, index, setIndex }: { documentId?: string; loading: boolean; historyError: boolean; onRetryHistory: () => void; events: WritingEvent[]; title: string; onClose: () => void; index: number; setIndex: (index: number) => void }) {
   const [playing, setPlaying] = useState(false); const [speed, setSpeed] = useState(4);
-  useEffect(() => { if (!playing || index >= events.length - 1) { if (index >= events.length - 1) setPlaying(false); return; } const timer = window.setTimeout(() => setIndex(index + 1), 800 / speed); return () => window.clearTimeout(timer); }, [playing, speed, index, events.length, setIndex]);
+  const previousEvents = useRef(events);
+  useLayoutEffect(() => {
+    const selected = previousEvents.current[index];
+    if (selected) {
+      const nextIndex = events.findIndex(item => eventKey(item) === eventKey(selected));
+      if (nextIndex >= 0 && nextIndex !== index) setIndex(nextIndex);
+    }
+    previousEvents.current = events;
+  }, [events, index, setIndex]);
   const event = events[index] ?? events[0];
+  const { snapshot, snapshotError, retrySnapshot } = useTimelineSnapshots(documentId, events, index);
+  const lastFrame = useRef<{ documentId?: string; event: WritingEvent; html: string } | null>(null);
+  useLayoutEffect(() => {
+    if (event && snapshot !== undefined) lastFrame.current = { documentId, event, html: snapshot };
+  }, [documentId, event, snapshot]);
+  const frame = event && snapshot !== undefined ? { event, html: snapshot } : lastFrame.current?.documentId === documentId ? lastFrame.current : null;
+  const frameIndex = frame ? events.findIndex(item => eventKey(item) === eventKey(frame.event)) : index;
+  const pending = snapshot === undefined && events.length > 0;
+  useEffect(() => { if (snapshotError) setPlaying(false); }, [snapshotError]);
+  const window = historyWindow(index, events.length);
+  useEffect(() => { if (snapshot === undefined || !playing || index >= events.length - 1) { if (index >= events.length - 1) setPlaying(false); return; } const timer = globalThis.setTimeout(() => setIndex(index + 1), 800 / speed); return () => globalThis.clearTimeout(timer); }, [playing, speed, index, events.length, setIndex, snapshot]);
   const labels: Record<string, string> = { start: t("Inicio"), insert: t("Escritura"), delete: t("Eliminación"), paste: t("Pegado"), paste_edit: t("Reelaboración de pegado"), format: t("Formato"), focus: t("Vuelta al editor"), blur: t("Salida del editor"), save: t("Guardado") };
   return <section className="timeline-view">
     <header><div><button className="back-link" onClick={onClose}>{t("← Volver al documento")}</button><p className="eyebrow">{t("Proceso de escritura")}</p><h1>{title}</h1></div><div className="timeline-stat"><strong>{events.length}</strong><span>{t("eventos registrados")}</span></div></header>
+    <p>{t("El proceso incluye borradores recibidos, que pueden diferir del texto guardado o sellado.")}</p>
     <div className="timeline-grid">
-      <div className="replay-paper"><div className="replay-meta"><span>{t("Evento {index} de {total}", { index: index + 1, total: events.length })}</span><strong>{labels[event?.event_type] ?? event?.event_type}</strong></div><article dangerouslySetInnerHTML={{ __html: event?.after_html || `<p class="empty-replay">${t("La sesión comienza aquí.")}</p>` }} /></div>
-      <aside className="event-rail"><h2>{t("Secuencia")}</h2><div className="event-list">{events.map((item, eventIndex) => <button key={`${item.sequence}-${eventIndex}`} className={eventIndex === index ? "active" : ""} onClick={() => { setPlaying(false); setIndex(eventIndex); }}><i className={item.event_type}></i><span><strong>{labels[item.event_type] ?? item.event_type}</strong><small>{duration(item.elapsed_ms)}</small></span></button>)}</div></aside>
+      <div className="replay-paper"><div className="replay-meta"><span>{t("Evento {index} de {total}", { index: events.length ? frameIndex + 1 : 0, total: events.length })}{pending && frame && <small className="replay-status" role="status">{t(snapshotError ? "Evento {index} pendiente" : "Cargando evento {index}…", { index: index + 1 })}</small>}</span><strong>{labels[(frame?.event ?? event)?.event_type] ?? (frame?.event ?? event)?.event_type}</strong></div><article aria-busy={pending} data-event-key={frame ? eventKey(frame.event) : undefined} dangerouslySetInnerHTML={{ __html: frame ? frame.html || `<p class="empty-replay">${t("La sesión comienza aquí.")}</p>` : pending ? `<p>${t(snapshotError ? "No se pudo cargar la instantánea." : "Cargando instantánea…")}</p>` : `<p class="empty-replay">${t("La sesión comienza aquí.")}</p>` }} /></div>
+      <aside className="event-rail">{historyError && <p role="alert">{t("No se pudo cargar el historial.")} <button onClick={onRetryHistory}>{t("Reintentar")}</button></p>}{loading && <p role="status">{t("Cargando historial…")}</p>}{snapshotError && <p role="alert">{t("No se pudo cargar la instantánea.")} <button onClick={retrySnapshot}>{t("Reintentar")}</button></p>}<h2>{t("Secuencia")}</h2><div className="event-list">{events.slice(window.start, window.end).map((item, offset) => { const eventIndex = window.start + offset; return <button key={`${item.sequence}-${eventIndex}`} className={eventIndex === index ? "active" : ""} onClick={() => { setPlaying(false); setIndex(eventIndex); }}><i className={item.event_type}></i><span><strong>{labels[item.event_type] ?? item.event_type}</strong><small>{duration(item.elapsed_ms)}</small></span></button>; })}</div></aside>
     </div>
-    <footer className="transport"><button className="play" aria-label={playing ? t("Pausar") : t("Reproducir")} onClick={() => setPlaying(!playing)}>{playing ? "Ⅱ" : "▶"}</button><input type="range" min="0" max={Math.max(0, events.length - 1)} value={Math.min(index, Math.max(0, events.length - 1))} onChange={event => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label={t("Posición de la reproducción")}/><span>{duration(event?.elapsed_ms ?? 0)}</span><select value={speed} onChange={event => setSpeed(Number(event.target.value))} aria-label={t("Velocidad")}><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></footer>
+    <footer className="transport"><button className="play" disabled={snapshotError || !events.length} aria-label={playing ? t("Pausar") : t("Reproducir")} onClick={() => setPlaying(!playing)}>{playing ? "Ⅱ" : "▶"}</button><input type="range" min="0" max={Math.max(0, events.length - 1)} value={Math.min(index, Math.max(0, events.length - 1))} onChange={event => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label={t("Posición de la reproducción")}/><span>{duration((frame?.event ?? event)?.elapsed_ms ?? 0)}</span><select value={speed} onChange={event => setSpeed(Number(event.target.value))} aria-label={t("Velocidad")}><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></footer>
   </section>;
 }
 
@@ -455,40 +440,114 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label={t("Cerrar")}>×</button><h2 id="modal-title">{title}</h2>{children}</section></div>;
 }
 
-function SubmissionsView({ submissions }: { submissions: Submission[] }) {
-  return <main className="workspace dashboard"><section className="dashboard-head"><div><p className="eyebrow">{t("Versiones compartidas")}</p><h1>{t("Entregas")}</h1><p>{t("Una entrega contiene una versión inmutable; tus borradores posteriores permanecen privados.")}</p></div></section><section className="empty-state"><span>↗</span><h2>{submissions.length ? t("{count} entregas registradas", { count: submissions.length }) : t("Todavía no has realizado ninguna entrega")}</h2><p>{t("Sella una versión desde el editor y elige a quién deseas enviarla. Las actividades del profesor aparecerán aquí cuando estén habilitadas.")}</p></section></main>;
+function SubmissionsView() {
+  const [items, setItems] = useState<Submission[]>([]);
+  const [version, setVersion] = useState<DocumentVersion | null>(null);
+  const [notice, setNotice] = useState("");
+  const [history, setHistory] = useState<WritingEvent[]>([]);
+  const [scopeId, setScopeId] = useState("");
+  const [snapshot, setSnapshot] = useState("");
+  const [selected, setSelected] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const readAttempt = useRef(0);
+  const [error, setError] = useState("");
+  useEffect(() => { void api<{ received: Submission[]; sent: Submission[] }>("/submissions").then(data => setItems([...data.received, ...data.sent])).catch(() => undefined); }, []);
+  const open = async (id: string) => {
+    const attempt = ++readAttempt.current;
+    setVersion(null); setHistory([]); setSnapshot(""); setNotice(""); setError(""); setLoading(true);
+    try {
+      const data = await api<{ version: DocumentVersion & { document_id: string }; history_available: boolean; history_notice: string | null }>(`/submissions/${id}`);
+      if (attempt !== readAttempt.current) return;
+      const scope = data.version;
+      setScopeId(scope.document_id);
+      // Private image URLs need the same explicit version authorization.
+      setVersion({ ...scope, snapshot_html: scope.snapshot_html.replace(/(\/api\/documents\/[^"\s<>]+\/images\/[^"\s<>]+)/g, `$1?version_id=${scope.id}`) });
+      setNotice(data.history_available ? "" : "Esta versión antigua no tiene una frontera de proceso verificable. Solo se comparte la instantánea sellada.");
+      if (data.history_available) {
+        let page: HistoryPage; let query = `version_id=${scope.id}&metadata=1`; const events: WritingEvent[] = [];
+        do {
+          page = await api<HistoryPage>(`/documents/${scope.document_id}/timeline?${query}`);
+          if (attempt !== readAttempt.current) return;
+          events.push(...page.events);
+          query = `version_id=${scope.id}&metadata=1&before_id=${page.before_id}&cursor=${encodeURIComponent(page.next_cursor ?? "")}`;
+        } while (page.next_cursor);
+        setHistory(events); setSelected(0);
+      }
+    } catch (reason) { if (attempt === readAttempt.current) setError(reason instanceof Error ? reason.message : ""); }
+    finally { if (attempt === readAttempt.current) setLoading(false); }
+  };
+  const readEvent = async (index: number) => {
+    if (!version || !history[index]?.id) return;
+    const attempt = ++readAttempt.current;
+    setSelected(index); setSnapshot(""); setError("");
+    try {
+      const data = await api<{ events: WritingEvent[] }>(`/documents/${scopeId}/timeline?version_id=${version.id}&event_id=${history[index].id}`);
+      if (attempt === readAttempt.current) setSnapshot((data.events[0].after_html ?? "").replace(/(\/api\/documents\/[^"\s<>]+\/images\/[^"\s<>]+)/g, `$1?version_id=${version.id}`));
+    } catch (reason) { if (attempt === readAttempt.current) setError(reason instanceof Error ? reason.message : ""); }
+  };
+  const window = historyWindow(selected, history.length);
+  return <main className="workspace dashboard"><h1>{t("Entregas")}</h1>{items.map(item => <button key={item.id} data-submission-id={item.id} onClick={() => void open(item.id)}>{item.submitted_at}</button>)}{error && <p role="alert">{error}</p>}{version && <><h2>{t("Versión")} {version.version_number}</h2><div dangerouslySetInnerHTML={{ __html: version.snapshot_html }} /><p>{t(notice)}</p>{!notice && <p>{loading ? t("Cargando historial…") : `${history.length} ${t("eventos")}`}</p>}{history.length > 0 && <p>{t("El proceso incluye borradores recibidos, que pueden diferir del texto guardado o sellado.")}</p>}{history.length > 0 && <input aria-label={t("Evento")} type="range" min={0} max={history.length - 1} value={selected} onChange={event => void readEvent(Number(event.target.value))} />}<ol>{history.slice(window.start, window.end).map((event, index) => <li key={event.id ?? eventKey(event)}><button onClick={() => void readEvent(window.start + index)}>{event.server_received_at} · {event.event_type} · {event.elapsed_ms} ms</button></li>)}</ol>{snapshot && <article dangerouslySetInnerHTML={{ __html: snapshot }} />}</>}</main>;
 }
 
 export default function App() {
   useLocale();
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [authNotice, setAuthNotice] = useState("");
-  const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [submissions] = useState<Submission[]>([]); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
+  const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
   const [folders, setFolders] = useState<DocumentFolder[]>([]);
   const loadArchive = async () => { const [texts, groups] = await Promise.all([api<{ documents: VeritasDocument[] }>("/documents"), api<{ folders: DocumentFolder[] }>("/folders")]); setDocuments(texts.documents); setFolders(groups.folders); };
+  const announceIdentity = () => { try { localStorage.setItem("veritas:auth-generation", `${Date.now()}:${Math.random()}`); } catch { /* Storage may be disabled. */ } };
+  useEffect(() => {
+    const externalIdentity = (event: StorageEvent) => { if (event.key === "veritas:auth-generation") window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT)); };
+    window.addEventListener("storage", externalIdentity);
+    return () => window.removeEventListener("storage", externalIdentity);
+  }, []);
   useEffect(() => {
     const expire = (event: Event) => {
       const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
-      setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
+      resetIdentity(); setEventsByDocument({}); setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
   }, []);
-  useEffect(() => { void (async () => { try { const identity = await api<{ user: User }>('/me'); setUser(identity.user); setAuthNotice(""); await loadArchive(); } catch (reason) { if (reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) { setUser(null); setDocuments([]); } else if (import.meta.env.DEV) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); }, []);
+  useEffect(() => { void (async () => { try { const identity = await api<{ user: User }>('/me'); resetIdentity(identity.user.id); setUser(identity.user); setAuthNotice(""); await loadArchive(); } catch (reason) { if (reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) { setUser(null); setDocuments([]); } else if (import.meta.env.DEV) { setDemo(true); setUser({ id: 1, name: "Alejandro", email: "alejandro@veritas.local" }); setDocuments(demoDocuments); } } finally { setBooting(false); } })(); }, []);
+  useEffect(() => {
+    if (!user || demo) return;
+    let disposed = false;
+    const check = async () => {
+      try {
+        const result = await api<{ user: User }>("/me");
+        if (!disposed && result.user.id !== user.id) window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      } catch (reason) {
+        if (!disposed && reason instanceof ApiError && (reason.status === 401 || reason.status === 419)) window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      }
+    };
+    const timer = window.setInterval(() => void check(), 15000);
+    const focus = () => void check();
+    window.addEventListener("focus", focus);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener("focus", focus); };
+  }, [user?.id, demo]);
   const create = async (title: string, folderId: string | null = null) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, folder_id: folderId, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title, folder_id: folderId }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
   const remove = async (document: VeritasDocument) => { if (!demo) await api<{ deleted: boolean }>(`/documents/${document.id}`, { method: 'DELETE' }); setDocuments(previous => previous.filter(item => item.id !== document.id)); setEventsByDocument(previous => { const next = { ...previous }; delete next[document.id]; return next; }); if (active?.id === document.id) setActive(null); };
-  const open = async (document: VeritasDocument) => { if (!demo) { const [detail, timeline] = await Promise.all([api<{ document: VeritasDocument }>(`/documents/${document.id}`), api<{ events: WritingEvent[] }>(`/documents/${document.id}/timeline`)]); document = detail.document; setEventsByDocument(previous => ({ ...previous, [document.id]: timeline.events })); } setActive(document); setView("editor"); };
-  const persist = (updated: VeritasDocument) => { setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
-  const move = async (document: VeritasDocument, folderId: string | null) => { if (demo) persist({ ...document, folder_id: folderId }); else { const result = await api<{ document: VeritasDocument }>(`/documents/${document.id}`, { method: "PATCH", body: JSON.stringify({ folder_id: folderId }) }); persist({ ...document, ...result.document }); } };
+  const open = async (document: VeritasDocument) => { if (!demo) { const detail = await api<{ document: VeritasDocument }>(`/documents/${document.id}`); document = detail.document; } setActive(document); setView("editor"); };
+  const persist = (updated: VeritasDocument) => { if (authenticatedIdentity() !== updated.owner_id && !demo) return; setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
+  const move = async (document: VeritasDocument, folderId: string | null) => { if (demo) persist({ ...document, folder_id: folderId }); else { const result = await api<{ document: VeritasDocument }>(`/documents/${document.id}`, { method: "PATCH", body: JSON.stringify({ revision: document.revision ?? 0, folder_id: folderId }) }); persist({ ...document, ...result.document }); } };
   const saveFolder = async (name: string, id?: string): Promise<DocumentFolder> => { const folder = demo ? { id: id ?? makeId(), name } : (await api<{ folder: DocumentFolder }>(id ? `/folders/${id}` : "/folders", { method: id ? "PATCH" : "POST", body: JSON.stringify({ name }) })).folder; setFolders(previous => [...previous.filter(item => item.id !== folder.id), folder].sort((a, b) => a.name.localeCompare(b.name, getLocale()))); return folder; };
   const removeFolder = async (folder: DocumentFolder) => { if (!demo) await api(`/folders/${folder.id}`, { method: "DELETE" }); setFolders(previous => previous.filter(item => item.id !== folder.id)); setDocuments(previous => previous.map(document => document.folder_id === folder.id ? { ...document, folder_id: null } : document)); };
   const returnToDocuments = () => { setView("documents"); if (!demo) void loadArchive().catch(() => undefined); };
-  const logout = async () => { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); setUser(null); setDocuments([]); setFolders([]); setView("documents"); };
-  if (booting) return <main className="loading"><Logo /><span></span><p>{t("Abriendo tu archivo…")}</p></main>;
-  if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
+  const logout = async () => {
+    setSigningOut(true); announceIdentity();
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { message: "" } }));
+    try { if (!demo) await api('/auth/logout', { method: 'POST', body: '{}' }); }
+    catch (reason) { if (reason instanceof Error) setAuthNotice(reason.message); }
+    finally { setSigningOut(false); }
+  };
+  if (booting || signingOut) return <main className="loading"><Logo /><span></span><p>{t("Abriendo tu archivo…")}</p></main>;
+  if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); resetIdentity(next.id); announceIdentity(); setActive(null); setEventsByDocument({}); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
   return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
     {view === "documents" && <DocumentsWorkspace documents={documents} folders={folders} onOpen={open} onCreate={create} onDelete={remove} onMove={move} onFolderSave={saveFolder} onFolderDelete={removeFolder} />}
-    {view === "editor" && active && <EditorView key={active.id} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} folders={folders} onBack={returnToDocuments} onPersist={persist} />}
-    {view === "submissions" && <SubmissionsView submissions={submissions} />}
+    {view === "editor" && active && <EditorView key={`${user.id}:${active.id}`} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} folders={folders} onBack={returnToDocuments} onPersist={persist} />}
+    {view === "submissions" && <SubmissionsView />}
   </Shell>;
 }

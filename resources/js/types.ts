@@ -23,6 +23,7 @@ export type DocumentVersion = {
 };
 
 export type VeritasDocument = {
+  revision?: number;
   id: string;
   owner_id: number;
   title: string;
@@ -47,7 +48,9 @@ export type WritingEvent = {
   event_type: "start" | "insert" | "delete" | "paste" | "paste_edit" | "format" | "focus" | "blur" | "save";
   input_type?: string | null;
   data?: string | null;
-  after_html: string;
+  // Metadata pages deliberately omit snapshots. Pending writes always include HTML.
+  after_html?: string;
+  direct_words?: number;
   elapsed_ms: number;
   created_at?: string;
   server_received_at?: string;

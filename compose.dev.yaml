@@ -1,0 +1,80 @@
+name: inkgroove-dev
+x-php: &php
+  image: inkgroove-dev-php:local
+  build:
+    context: .
+    dockerfile: docker/dev/Dockerfile.php
+  working_dir: /workspace
+  volumes:
+    - .:/workspace
+    - vendor:/workspace/vendor
+  restart: "no"
+services:
+  db:
+    image: inkgroove-dev-db:local
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile.db
+    container_name: inkgroove-dev-db
+    environment:
+      MARIADB_DATABASE: inkgroove_dev
+      MARIADB_USER: inkgroove_dev
+      MARIADB_PASSWORD_FILE: /run/secrets/app-password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/root-password
+      MARIADB_ROOT_HOST: "%"
+    volumes:
+      - mysql:/var/lib/mysql
+      - ./.dev-private/app-password:/run/secrets/app-password:ro
+      - ./.dev-private/root-password:/run/secrets/root-password:ro
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    command: [--innodb-buffer-pool-size=96M, --max-connections=30]
+    restart: "no"
+  app:
+    <<: *php
+    container_name: inkgroove-dev-app
+    env_file: ./.dev-private/app.env
+    command: [sh, -c, 'chown -R www-data:www-data storage bootstrap/cache && php artisan migrate --force && exec apache2-foreground']
+    ports: ["127.0.0.1:8083:80"]
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, "http://127.0.0.1/up"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+  php:
+    <<: *php
+    profiles: [tools]
+    entrypoint: []
+    command: [php, --version]
+  smoke:
+    <<: *php
+    profiles: [tools]
+    entrypoint: []
+    env_file: ./.dev-private/smoke.env
+    command: [sh, -c, 'php artisan migrate --force && php scripts/check-mysql-release.php']
+  node:
+    image: inkgroove-dev-node:local
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile.node
+    profiles: [tools]
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - node_modules:/workspace/node_modules
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /opt/inkgroove/browsers
+      NODE_OPTIONS: --max-old-space-size=512
+    shm_size: 256m
+    restart: "no"
+volumes:
+  mysql:
+  vendor:
+  node_modules:

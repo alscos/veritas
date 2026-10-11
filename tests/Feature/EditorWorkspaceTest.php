@@ -67,7 +67,7 @@ class EditorWorkspaceTest extends TestCase
         $this->actingAs($other)->getJson('/api/folders')->assertJsonCount(0, 'folders');
         $this->patchJson('/api/folders/'.$folder['id'], ['name' => 'Ajena'])->assertNotFound();
         $this->postJson('/api/documents', ['title' => 'Texto ajeno', 'folder_id' => $folder['id']])->assertUnprocessable();
-        $this->patchJson('/api/documents/'.$document['id'], ['folder_id' => null])->assertNotFound();
+        $this->patchJson('/api/documents/'.$document['id'], ['revision' => (int) \App\Models\Document::findOrFail($document['id'])->revision, 'folder_id' => null])->assertNotFound();
         $this->actingAs($owner)->deleteJson('/api/folders/'.$folder['id'])->assertOk();
         $this->assertDatabaseHas('documents', ['id' => $document['id'], 'folder_id' => null]);
     }
@@ -77,7 +77,7 @@ class EditorWorkspaceTest extends TestCase
         $id = $this->postJson('/api/documents', ['title' => 'Pingüino'])->assertCreated()->json('document.id');
         $page = ['format' => 'legal', 'orientation' => 'landscape', 'margin' => 20];
         $html = '<h1 style="text-align: center">Título</h1><p data-indent="2" data-line-height="2"><span data-font="arial" data-size="18" data-color="#2d6680">El pingüino llegó a Cádiz.</span></p><p></p><p></p><p><mark data-origin="paste">Antes </mark><mark data-origin="paste-edited">después</mark></p><div data-page-break="true"></div>';
-        $saved = $this->patchJson('/api/documents/'.$id, ['content_html' => $html, 'page_settings' => $page])->assertOk()->json('document');
+        $saved = $this->patchJson('/api/documents/'.$id, ['revision' => (int) \App\Models\Document::findOrFail($id)->revision, 'content_html' => $html, 'page_settings' => $page])->assertOk()->json('document');
         $this->assertSame($page, $saved['page_settings']);
         $this->assertStringContainsString('El pingüino llegó a Cádiz.', $saved['content_html']);
         $this->assertStringContainsString('<p></p><p></p>', $saved['content_html']);
@@ -85,10 +85,10 @@ class EditorWorkspaceTest extends TestCase
         $this->assertStringContainsString('data-origin="paste-edited"', $saved['content_html']);
         $sealed = $this->postJson('/api/documents/'.$id.'/seal')->assertCreated()->json();
         $this->assertSame($page, $sealed['version']['page_settings']);
-        $this->patchJson('/api/documents/'.$id, ['page_settings' => ['format' => 'a5', 'orientation' => 'portrait', 'margin' => 15]])->assertOk();
+        $this->patchJson('/api/documents/'.$id, ['revision' => (int) \App\Models\Document::findOrFail($id)->revision, 'page_settings' => ['format' => 'a5', 'orientation' => 'portrait', 'margin' => 15]])->assertOk();
         $this->getJson('/api/verify/'.$sealed['certificate']['certificate_code'])->assertOk()->assertJsonPath('valid', true);
         $this->assertDatabaseHas('document_versions', ['id' => $sealed['version']['id'], 'snapshot_html' => $saved['content_html']]);
-        $this->patchJson('/api/documents/'.$id, ['page_settings' => ['format' => 'giant', 'orientation' => 'portrait', 'margin' => 999]])->assertUnprocessable();
+        $this->patchJson('/api/documents/'.$id, ['revision' => (int) \App\Models\Document::findOrFail($id)->revision, 'page_settings' => ['format' => 'giant', 'orientation' => 'portrait', 'margin' => 999]])->assertUnprocessable();
     }
     public function test_uploaded_images_are_private_persistent_and_bound_to_their_document(): void
     {
@@ -102,9 +102,9 @@ class EditorWorkspaceTest extends TestCase
         $this->actingAs($other)->get($upload['src'])->assertNotFound();
         $this->post('/api/documents/'.$document->id.'/images', ['image' => $this->imageFile()], ['Accept' => 'application/json'])->assertNotFound();
         $ownDocument = Document::create(['owner_id' => $other->id]);
-        $this->patchJson('/api/documents/'.$ownDocument->id, ['content_html' => '<p>Ajeno</p><img src="'.$upload['src'].'">'])->assertUnprocessable();
+        $this->patchJson('/api/documents/'.$ownDocument->id, ['revision' => (int) \App\Models\Document::findOrFail($ownDocument->id)->revision, 'content_html' => '<p>Ajeno</p><img src="'.$upload['src'].'">'])->assertUnprocessable();
         $html = '<p>Imagen propia</p><img src="'.$upload['src'].'" data-image-sha256="'.$image->sha256.'" width="300" height="300">';
-        $this->actingAs($owner)->patchJson('/api/documents/'.$document->id, ['content_html' => $html])->assertOk();
+        $this->actingAs($owner)->patchJson('/api/documents/'.$document->id, ['revision' => (int) \App\Models\Document::findOrFail($document->id)->revision, 'content_html' => $html])->assertOk();
         $sealed = $this->postJson('/api/documents/'.$document->id.'/seal')->assertCreated()->json();
         $this->assertSame($image->sha256, $sealed['certificate']['signed_payload']['images'][$image->id]);
         $this->deleteJson('/api/documents/'.$document->id)->assertOk();
@@ -118,13 +118,14 @@ class EditorWorkspaceTest extends TestCase
         $this->actingAs($owner);
         $first = $this->post('/api/documents/'.$document->id.'/images', ['image' => $this->imageFile()], ['Accept' => 'application/json'])->assertCreated()->json();
         $this->paths[] = DocumentImage::find($first['image']['id'])->path();
-        $this->patchJson('/api/documents/'.$document->id, ['content_html' => '<p>Texto entregado</p><img src="'.$first['src'].'">'])->assertOk();
+        $this->patchJson('/api/documents/'.$document->id, ['revision' => (int) \App\Models\Document::findOrFail($document->id)->revision, 'content_html' => '<p>Texto entregado</p><img src="'.$first['src'].'">'])->assertOk();
         $version = $this->postJson('/api/documents/'.$document->id.'/seal')->assertCreated()->json('version');
         DB::table('submissions')->insert(['id' => Str::uuid(), 'document_version_id' => $version['id'], 'sender_id' => $owner->id, 'recipient_user_id' => $recipient->id, 'status' => 'submitted', 'submitted_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
         $later = $this->post('/api/documents/'.$document->id.'/images', ['image' => $this->imageFile()], ['Accept' => 'application/json'])->assertCreated()->json();
         $this->paths[] = DocumentImage::find($later['image']['id'])->path();
-        $this->actingAs($recipient)->get($first['src'])->assertOk();
-        $this->get($later['src'])->assertNotFound();
+        $this->actingAs($recipient)->get($first['src'].'?version_id='.$version['id'])->assertOk();
+        $this->get($first['src'])->assertNotFound();
+        $this->get($later['src'].'?version_id='.$version['id'])->assertNotFound();
     }
     public function test_sanitizer_preserves_new_formats_and_blocks_nested_active_content(): void
     {
