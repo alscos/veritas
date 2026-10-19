@@ -1,0 +1,31 @@
+:root { font-family: system-ui, sans-serif; color: #17231f; background: #f4f4ee; }
+body { margin: 0; }
+.version-share-app { max-width: 960px; margin: auto; padding: 24px; }
+.version-share-app header { display: flex; justify-content: space-between; align-items: center; }
+.version-share-app label { display: block; margin: 12px 0; }
+.version-share-app input:not([type=checkbox]):not([type=radio]), .version-share-app select { max-width: 100%; box-sizing: border-box; padding: 8px; }
+.version-share-app input[readonly] { width: 100%; }
+.version-share-app button { margin: 6px; padding: 10px; cursor: pointer; }
+.version-share-app button:disabled { cursor: default; }
+.version-share-app section, .version-share-app li { padding: 16px; margin: 12px 0; border: 1px solid #b4c1b5; background: white; overflow-wrap: anywhere; }
+.version-share-app ul { padding-left: 20px; }
+.sealed-reading { white-space: pre-wrap; overflow-wrap: anywhere; font-family: Georgia, serif; line-height: 1.5; }
+.sealed-reading p:empty { min-height: 1.5em; }
+.sealed-reading img { display: block; max-width: 100%; height: auto; }
+.sealed-reading table { border-collapse: collapse; max-width: 100%; }
+.sealed-reading td, .sealed-reading th { border: 1px solid #809386; padding: 5px; }
+.sealed-reading .origin-paste { background: #ffeddb; color: #a34700; }
+.sealed-reading .origin-paste-edited { background: #e0edff; color: #1554aa; }
+.sealed-reading .align-left { text-align: left; }
+.sealed-reading .align-right { text-align: right; }
+.sealed-reading .align-center { text-align: center; }
+.sealed-reading .align-justify { text-align: justify; }
+.sealed-reading .indent-1 { margin-left: 5mm; }
+.sealed-reading .indent-2 { margin-left: 10mm; }
+.sealed-reading .indent-3 { margin-left: 15mm; }
+.sealed-reading .indent-4 { margin-left: 20mm; }
+.sealed-reading .indent-5 { margin-left: 25mm; }
+.sealed-reading .indent-6 { margin-left: 30mm; }
+.sealed-page-break { border-top: 1px dashed #809386; margin: 24px 0; }
+[role=alert] { color: #9c231a; }
+@media (max-width: 600px) { .version-share-app { padding: 12px; } }

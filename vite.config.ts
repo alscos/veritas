@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
     emptyOutDir: true,
     manifest: "manifest.json",
     rollupOptions: {
-      input: "resources/js/main.tsx",
+      input: ["resources/js/main.tsx", "resources/js/versionShareMain.tsx"],
       output: {
         entryFileNames: "assets/app-[hash].js",
         chunkFileNames: "chunks/[name]-[hash].js",

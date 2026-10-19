@@ -29,11 +29,17 @@ class ImageController
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) abort(500, __('inkgroove.image_storage'));
         $sha256 = hash_file('sha256', $file->getRealPath());
         $bytes = $file->getSize();
-        $file->move($directory, $filename);
+        $moved = false;
         try {
-            $image = DocumentImage::create(compact('id', 'filename', 'mime', 'width', 'height', 'bytes', 'sha256') + ['document_id' => $document->id]);
+            $image = DB::transaction(function () use ($document, $file, $directory, $filename, $id, $mime, $width, $height, $bytes, $sha256, &$moved) {
+                $document = Document::query()->lockForUpdate()->findOrFail($document->id);
+                abort_if($document->images()->count() >= 100, 422, __('inkgroove.image_limit'));
+                abort_if(file_exists($directory.'/'.$filename), 409, 'Image path conflict');
+                $file->move($directory, $filename); $moved = true;
+                return DocumentImage::create(compact('id', 'filename', 'mime', 'width', 'height', 'bytes', 'sha256') + ['document_id' => $document->id]);
+            });
         } catch (\Throwable $error) {
-            @unlink($directory.'/'.$filename);
+            if ($moved) @unlink($directory.'/'.$filename);
             throw $error;
         }
         return response()->json(['image' => $image, 'src' => $image->url()], 201);
@@ -48,6 +54,9 @@ class ImageController
             foreach ($boundary as $id => $head) {
                 if (\App\Models\WritingEvent::query()->where('writing_session_id', $id)->where('sequence', '<=', $head['sequence'])->where('id', '<=', $head['event_id'])->where('after_html', 'like', '%'.$image->url().'%')->exists()) { $mayRead = true; break; }
             }
+        }
+        if ($version && ($version->certificate?->signed_payload['format_version'] ?? null) === 3) {
+            abort_unless(\App\Support\VersionAccess::boundary($version) !== null && array_key_exists($image->id, $version->certificate->signed_payload['images'] ?? []), 404);
         }
         abort_unless($mayRead && is_file($image->path()), 404);
         return response()->file($image->path(), [

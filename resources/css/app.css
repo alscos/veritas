@@ -1,3 +1,4 @@
+@import "../fonts/content/catalog.css";
 @font-face {
   font-family: "InkGroove Type Clean";
   src: url("../fonts/InkGrooveTypeClean-ES.woff") format("woff");
@@ -182,10 +183,10 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .process-card { width: 100%; border: 0; border-radius: 12px; background: var(--green); color: #fff; padding: 16px; display: flex; gap: 12px; text-align: left; cursor: pointer; }
 .process-card > span { color: var(--coral); }
 .process-card p { margin: 0; font-size: .7rem; line-height: 1.45; }
-.certificate-card { margin-top: 14px; padding: 14px; border: 1px solid #c7b47f; background: #faf4e5; border-radius: 12px; display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
+.certificate-card { margin-top: 14px; padding: 14px; border: 1px solid #c7b47f; background: #faf4e5; border-radius: 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; }
 .certificate-card .seal { width: 32px; height: 32px; border: 1px solid var(--gold); border-radius: 50%; display: grid; place-items: center; font-family: Georgia, serif; color: var(--gold); }
 .certificate-card p { margin: 0; font-size: .67rem; line-height: 1.45; min-width: 0; }
-.certificate-card code { font-size: .59rem; color: #6d5b34; }
+.certificate-card code { overflow-wrap: anywhere; font-size: .59rem; color: #6d5b34; }
 .certificate-card button { grid-column: 1/-1; border: 0; border-top: 1px solid #dbc99b; background: transparent; padding: 10px 0 0; cursor: pointer; font-size: .72rem; font-weight: 800; color: #6d5b34; }
 
 .timeline-view { min-height: calc(100vh - 68px); background: #f3f3ef; padding: 34px clamp(28px, 5vw, 78px) 92px; }
@@ -481,3 +482,72 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
   .page-viewport { padding: 20px 10px; }
   .page-status { padding: 0 8px; }
 }
+
+/* Version-scoped, read-only submissions. */
+.submissions-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 28px; align-items: start; }
+.submission-list { max-height: 70vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); padding: 10px; }
+.submission-list > button { width: 100%; display: grid; gap: 7px; padding: 16px; border: 0; border-radius: 9px; text-align: left; background: transparent; color: var(--green); cursor: pointer; }
+.submission-list > button.active { background: var(--mint); }
+.submission-list > button:hover { background: #e7ebe5; }
+.submission-list time, .submission-list small { color: var(--muted); font-size: .78rem; }
+.submission-detail { min-width: 0; overflow-wrap: anywhere; }
+.submission-detail > header { margin-bottom: 20px; }
+.submission-detail h2 { font: 400 1.65rem/1.3 var(--display-font); }
+.submission-detail p { line-height: 1.6; }
+.submission-detail .replay-paper article { min-height: 180px; }
+.submission-process { margin-top: 36px; }
+.submission-history { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; }
+.submission-history .replay-paper { max-height: 65vh; min-width: 0; }
+.submission-history .event-rail { max-height: 65vh; min-width: 0; }
+.submission-history .event-list { max-height: 52vh; }
+.submission-history .event-list span { display: grid; text-align: left; }
+.submission-history .replay-meta { flex-wrap: wrap; gap: 8px; padding: 12px; }
+.submission-history .replay-paper article { padding: 32px; }
+.submission-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 18px 0; }
+.submission-controls input { flex: 1; min-width: 90px; accent-color: var(--coral); }
+.submissions-workspace button:focus-visible, .submissions-workspace input:focus-visible, .submissions-workspace select:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+.submission-controls button, .submission-controls select, .submission-detail [role=alert] button { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; color: var(--green); background: var(--paper); cursor: pointer; }
+.submission-controls button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 1000px) { .submission-history { grid-template-columns: minmax(0, 1fr); } .submission-history .event-list { max-height: 200px; } }
+@media (max-width: 700px) { .submissions-grid { grid-template-columns: minmax(0, 1fr); } .submission-list { max-height: 240px; } .submission-detail .replay-paper article { padding: 28px 20px; } }
+
+.submission-accounts { font-size: .85rem; overflow-wrap: anywhere; }
+.submission-accounts p { margin: .25em 0; }
+
+/* PDF export is separate from the delivery action above it. */
+.sealed-pdf-choice { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; max-width: 100%; padding-top: 12px; border-top: 1px solid #dbc99b; }
+.sealed-pdf-choice label { font-size: .8rem; font-weight: 700; }
+.sealed-pdf-choice select { box-sizing: border-box; min-width: 0; width: 100%; max-width: 100%; padding: 9px; font: inherit; font-size: .85rem; color: #12352d; background: #fffefb; border: 1px solid #9b8960; border-radius: 6px; }
+.sealed-pdf-action { display: grid; gap: 8px; min-width: 0; max-width: 100%; }
+.certificate-card .sealed-pdf-download, .sealed-pdf-download { box-sizing: border-box; width: 100%; max-width: 100%; border: 1px solid #12352d; border-radius: 6px; background: #12352d; color: #fffefb; padding: 10px 12px; font: inherit; font-size: .85rem; font-weight: 700; cursor: pointer; white-space: normal; }
+.sealed-pdf-download:disabled { opacity: .65; cursor: wait; }
+.sealed-pdf-choice :is(select, button):focus-visible, .sealed-pdf-download:focus-visible { outline: 3px solid #ff6b42; outline-offset: 3px; }
+.sealed-pdf-action [role=alert], .sealed-pdf-status { font-size: .8rem; overflow-wrap: anywhere; }
+.sealed-pdf-status:empty { display: none; }
+
+/* One evidence tree: desktop column and mobile dialog share all state. */
+.evidence-access, .evidence-mobile-heading, .evidence-tabs, .evidence-empty { display: none; }
+@media (max-width: 1080px) {
+  .evidence-empty { display: block; }
+  .evidence-access { display: flex; gap: 8px; margin: 0 0 12px; }
+  .evidence-access button, .evidence-mobile-heading button, .evidence-tabs button { min-height: 44px; min-width: 44px; border: 1px solid var(--line); border-radius: 8px; background: #fffefb; color: #12352d; padding: 8px 14px; cursor: pointer; }
+  .evidence-panel.evidence-open { display: block; position: fixed; z-index: 90; inset: 0; width: auto; max-width: 100%; height: 100dvh; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; background: #fffefb; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .evidence-mobile-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .evidence-mobile-heading h2 { font-size: 1.1rem; margin: 0; }
+  .evidence-tabs { display: flex; gap: 8px; margin: 16px 0; }
+  .evidence-tabs button { flex: 1; }
+  .evidence-tabs [aria-selected="true"] { background: #12352d; color: #fffefb; }
+  .evidence-panel [role="tabpanel"] { min-width: 0; overflow-wrap: anywhere; }
+  .evidence-panel .certificate-card { max-width: 100%; box-sizing: border-box; }
+  .evidence-panel button:focus-visible, .evidence-access button:focus-visible, .evidence-panel select:focus-visible { outline: 3px solid #ff6b42; outline-offset: 2px; }
+  .editor-header { flex-wrap: wrap; gap: 8px; }
+  .editor-header > div { min-width: 0; max-width: 100%; }
+  .title-input { max-width: 100%; }
+}
+
+@media (max-width: 1080px) {
+  .evidence-panel button, .evidence-panel select { min-height: 44px; }
+}
+
+/* Explicit creation contract; unmarked historical blocks keep their CSS. */
+.editor [data-content-font="literata"], .replay-paper [data-content-font="literata"] { font-family: "Literata"; font-synthesis: none; font-optical-sizing: none; }

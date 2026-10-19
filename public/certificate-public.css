@@ -1,0 +1,16 @@
+:root { color-scheme: light; font-family: Georgia, 'Times New Roman', serif; color: #27231f; background: #fffefb; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: clamp(1rem, 4vw, 3rem); }
+main { max-width: 46rem; margin: 1rem auto 3rem; line-height: 1.65; }
+.brand { color: #12352d; font-size: 1.3rem; font-weight: bold; border-bottom: 3px solid #ff6b42; padding-bottom: 1rem; }
+h1 { font-size: clamp(1.7rem, 5vw, 2.5rem); line-height: 1.2; font-weight: normal; }
+h2 { font-size: 1.15rem; line-height: 1.4; }
+.seal-details { background: #f7f3e9; padding: .5rem 1.25rem; border: 1px solid #dfd6bf; border-radius: .5rem; }
+.signature-result { padding: .75rem 0; border-bottom: 1px solid #dfd6bf; }
+.limitations { padding-top: .5rem; }
+p, code { overflow-wrap: anywhere; }
+code { font-size: .95rem; }
+a { color: #83381e; text-underline-offset: .2em; }
+a:focus-visible { outline: 3px solid #ff6b42; outline-offset: 4px; }
+nav { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #dfd6bf; }
+nav a { display: inline-block; padding: .4rem; }

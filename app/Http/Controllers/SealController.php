@@ -15,6 +15,15 @@ class SealController
     public function store(Request $request, Document $document): JsonResponse
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
+        if (config('veritas.seal_format') === 3) {
+            try {
+                $capture = new \App\Support\V3Capture;
+                [$version, $certificate] = $capture->commit($capture->prepare($document->id));
+            } catch (\App\Support\VerificationBudgetExceeded | \App\Support\EvidenceFailure $e) {
+                abort(409, 'V3 evidence unavailable');
+            }
+            return response()->json(['version' => $version, 'certificate' => $certificate], 201);
+        }
         [$version, $certificate] = DB::transaction(function () use ($document): array {
             $document = Document::query()->lockForUpdate()->findOrFail($document->id);
             abort_if($document->word_count < 1, 422, __('inkgroove.empty_document'));
@@ -66,16 +75,25 @@ class SealController
 
     public function verify(string $code): JsonResponse
     {
-        $certificate = Certificate::query()->where('certificate_code', $code)->firstOrFail();
-        $payload = $certificate->signed_payload;
-        ksort($payload);
-        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        $valid = hash_equals($certificate->signature, hash_hmac('sha256', $encoded, (string) config('veritas.signing_key')));
-        return response()->json([
-            'valid' => $valid,
-            'certificate_code' => $certificate->certificate_code,
-            'issued_at' => $certificate->issued_at,
-            'content_hash' => $certificate->signed_payload['content_hash'] ?? null,
-        ], $valid ? 200 : 409);
+        $certificate = \App\Support\PublicCertificate::find($code);
+        if (!$certificate) return response()->json(['message' => __('inkgroove.certificate_unavailable')], 404)->header('Cache-Control', 'no-store');
+        $summary = \App\Support\PublicCertificate::summary($certificate);
+        return response()->json($summary, $summary['valid'] ? 200 : 409)->header('Cache-Control', 'no-store');
+    }
+
+    public function publicPage(Request $request, string $code)
+    {
+        $certificate = \App\Support\PublicCertificate::find($code);
+        if (!$certificate) return response()->view('certificate-unavailable', ['english' => $request->query('lang') === 'en'], 404)->header('Cache-Control', 'no-store')->header('X-Robots-Tag', 'noindex, nofollow')->header('Content-Security-Policy', "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        $summary = \App\Support\PublicCertificate::summary($certificate);
+        $english = $request->query('lang') === 'en';
+        // Explicit projection: the public view never receives a model or payload.
+        return response()->view('certificate-public', [
+            'code' => $summary['certificate_code'], 'issuedAt' => $summary['issued_at']?->toIso8601String(),
+            'valid' => $summary['valid'], 'english' => $english,
+            'sealFormat' => $summary['valid'] && is_array($certificate->signed_payload) && in_array($certificate->signed_payload['format_version'] ?? null, [2, 3], true) ? $certificate->signed_payload['format_version'] : null,
+        ], $summary['valid'] ? 200 : 409)->header('Cache-Control', 'no-store')
+            ->header('X-Robots-Tag', 'noindex, nofollow')->header('Referrer-Policy', 'no-referrer')
+            ->header('Content-Security-Policy', "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     }
 }

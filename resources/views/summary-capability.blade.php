@@ -1,0 +1,3 @@
+<!doctype html>
+<html lang="{{ app()->getLocale() }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>InkGroove</title><link rel="stylesheet" href="/summary-capability.css"><script src="/summary-capability.js" defer></script></head>
+<body><main><h1 id="heading">InkGroove</h1><select id="language" aria-label="Idioma / Language"><option value="es">Español</option><option value="en">English</option></select><p id="notice"></p><p id="status" role="status" aria-live="polite"></p><dl id="summary"></dl></main></body></html>

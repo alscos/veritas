@@ -1,0 +1,233 @@
+{
+  "literata": {
+    "revision": "0c2761b727a1b3a7cffd313c37f0f5163dfc7a63",
+    "license": {
+      "url": "https://raw.githubusercontent.com/googlefonts/literata/0c2761b727a1b3a7cffd313c37f0f5163dfc7a63/OFL.txt",
+      "sha256": "8742963604cd89dc81437811a850018fc03b2bfad686d7422c8235967c87614e"
+    },
+    "files": {
+      "Literata-Regular": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/googlefonts/literata/0c2761b727a1b3a7cffd313c37f0f5163dfc7a63/fonts/ttf/Literata-Regular.ttf",
+          "sha256": "0390890de9bb9d5862a6ba4125b82c61792ccc3d66b63e73eee75c1a16fcd208"
+        },
+        "ttf_sha256": "0390890de9bb9d5862a6ba4125b82c61792ccc3d66b63e73eee75c1a16fcd208",
+        "woff2_sha256": "94f47c83bbae42da280fdeccad202ea904edb07020d98979f99efad2f75f1b1e",
+        "ttf_bytes": 319964,
+        "woff2_bytes": 97440,
+        "postscript": "Literata-Regular",
+        "version": "Version 3.103; ttfautohint (v1.8.4.7-5d5b);gftools[0.9.29]",
+        "copyright": "Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)",
+        "weight": 400,
+        "italicAngle": 0.0,
+        "axes": null
+      },
+      "Literata-Bold": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/googlefonts/literata/0c2761b727a1b3a7cffd313c37f0f5163dfc7a63/fonts/ttf/Literata-Bold.ttf",
+          "sha256": "b6af95b3b443cdbce964aa06741596987f2f5c3ede46a2bc846e5addd99d061f"
+        },
+        "ttf_sha256": "b6af95b3b443cdbce964aa06741596987f2f5c3ede46a2bc846e5addd99d061f",
+        "woff2_sha256": "dace38d75534603d7b2e727e3a5979b6c53bedb9db9e14d4263ef92cfcb5f3d3",
+        "ttf_bytes": 331304,
+        "woff2_bytes": 106108,
+        "postscript": "Literata-Bold",
+        "version": "Version 3.103; ttfautohint (v1.8.4.7-5d5b);gftools[0.9.29]",
+        "copyright": "Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)",
+        "weight": 700,
+        "italicAngle": 0.0,
+        "axes": null
+      },
+      "Literata-Italic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/googlefonts/literata/0c2761b727a1b3a7cffd313c37f0f5163dfc7a63/fonts/ttf/Literata-Italic.ttf",
+          "sha256": "198f70cc9a17bab578553fa274b81984d58c440efe26bc06f1d841c194b6691a"
+        },
+        "ttf_sha256": "198f70cc9a17bab578553fa274b81984d58c440efe26bc06f1d841c194b6691a",
+        "woff2_sha256": "b634bb32aa92e7dd00783cf7e8a41728df60b0d9ce13ffcdd38c2f5e62e5e1f0",
+        "ttf_bytes": 304104,
+        "woff2_bytes": 98312,
+        "postscript": "Literata-Italic",
+        "version": "Version 3.103; ttfautohint (v1.8.4.7-5d5b);gftools[0.9.29]",
+        "copyright": "Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)",
+        "weight": 400,
+        "italicAngle": -2.0,
+        "axes": null
+      },
+      "Literata-BoldItalic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/googlefonts/literata/0c2761b727a1b3a7cffd313c37f0f5163dfc7a63/fonts/ttf/Literata-BoldItalic.ttf",
+          "sha256": "1dade59381ad02f4679d7e993a7a406472e587ac332af7a6168d3ad9214a99dc"
+        },
+        "ttf_sha256": "1dade59381ad02f4679d7e993a7a406472e587ac332af7a6168d3ad9214a99dc",
+        "woff2_sha256": "bb97edee54cbb5596fdff96747e1fcc6d086c2ae802395fce9621ad35d322398",
+        "ttf_bytes": 318888,
+        "woff2_bytes": 107180,
+        "postscript": "Literata-BoldItalic",
+        "version": "Version 3.103; ttfautohint (v1.8.4.7-5d5b);gftools[0.9.29]",
+        "copyright": "Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)",
+        "weight": 700,
+        "italicAngle": -2.0,
+        "axes": null
+      }
+    }
+  },
+  "inter": {
+    "revision": "0b58fb370093f9a9f4ff785d94405710b79de67c",
+    "license": {
+      "url": "https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl/inter/OFL.txt",
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
+    },
+    "files": {
+      "Inter-Regular": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+          "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"
+        },
+        "ttf_sha256": "0b59f6b6fc9e8a9ad8032802d1797c4237d9288a3e7b7661517070627b577060",
+        "woff2_sha256": "5e1c00e235ac738edcc4d26b110c4a72c45cd93db000f9296fefcb8ebab1cffe",
+        "ttf_bytes": 341396,
+        "woff2_bytes": 113788,
+        "postscript": "Inter-Regular",
+        "version": "Version 4.001;git-66647c0bb",
+        "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+        "weight": 400,
+        "italicAngle": 0.0,
+        "axes": {
+          "opsz": 14,
+          "wght": 400
+        }
+      },
+      "Inter-Bold": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+          "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"
+        },
+        "ttf_sha256": "202f240469f916722233188ec316107f6cecaf13b801e9b3939b82b9f7a816d6",
+        "woff2_sha256": "0249119afdda7714751decadfd194a62093d0baa48343f1ff8204f6f40a60cba",
+        "ttf_bytes": 343072,
+        "woff2_bytes": 117276,
+        "postscript": "Inter-Bold",
+        "version": "Version 4.001;git-66647c0bb",
+        "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+        "weight": 700,
+        "italicAngle": 0.0,
+        "axes": {
+          "opsz": 14,
+          "wght": 700
+        }
+      },
+      "Inter-Italic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf",
+          "sha256": "acd98e64795781b2058f07b18475e0ecee2a0fe2b42a49e2f9e37d0d6bf66ce6"
+        },
+        "ttf_sha256": "f0635603f9576789b7a9603e6f43d0c332ac5d17147cffa696c744bbd3cf9e50",
+        "woff2_sha256": "8377454d6d032e7a1feae637ea2fe5f1fdeaa6965f3e7a46708f71fb363657c7",
+        "ttf_bytes": 344808,
+        "woff2_bytes": 119996,
+        "postscript": "InterItalic-Italic",
+        "version": "Version 4.001;git-66647c0bb",
+        "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+        "weight": 400,
+        "italicAngle": -9.3988037109375,
+        "axes": {
+          "opsz": 14,
+          "wght": 400
+        }
+      },
+      "Inter-BoldItalic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl/inter/Inter-Italic%5Bopsz%2Cwght%5D.ttf",
+          "sha256": "acd98e64795781b2058f07b18475e0ecee2a0fe2b42a49e2f9e37d0d6bf66ce6"
+        },
+        "ttf_sha256": "498a8e0b6eeb3b67eaadc2c3d4cf571c6b669fc803b4f3355c0a134a4d942498",
+        "woff2_sha256": "81091a09814d5da76441b3e6d2becece8fe9cad700f03c85e62ba60e2f385e4a",
+        "ttf_bytes": 346700,
+        "woff2_bytes": 123912,
+        "postscript": "InterItalic-BoldItalic",
+        "version": "Version 4.001;git-66647c0bb",
+        "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+        "weight": 700,
+        "italicAngle": -9.3988037109375,
+        "axes": {
+          "opsz": 14,
+          "wght": 700
+        }
+      }
+    }
+  },
+  "ibmplexmono": {
+    "revision": "01d5d9f05246fb7090a8403b81257535cb1a088b",
+    "license": {
+      "url": "https://raw.githubusercontent.com/google/fonts/01d5d9f05246fb7090a8403b81257535cb1a088b/ofl/ibmplexmono/OFL.txt",
+      "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
+    },
+    "files": {
+      "IBMPlexMono-Regular": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/01d5d9f05246fb7090a8403b81257535cb1a088b/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+          "sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46"
+        },
+        "ttf_sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+        "woff2_sha256": "13b16cd770a73f60304510221c3e7186d396ba6ca5d64c52b5c6fb983d0e900a",
+        "ttf_bytes": 135580,
+        "woff2_bytes": 39176,
+        "postscript": "IBMPlexMono-Regular",
+        "version": "Version 2.3",
+        "copyright": "Copyright 2017 IBM Corp. All rights reserved.",
+        "weight": 400,
+        "italicAngle": 0.0,
+        "axes": null
+      },
+      "IBMPlexMono-Bold": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/01d5d9f05246fb7090a8403b81257535cb1a088b/ofl/ibmplexmono/IBMPlexMono-Bold.ttf",
+          "sha256": "ac27abd6450a64dd94467580a02fe6235156d5b92f2926ebbc8e7489df64e0be"
+        },
+        "ttf_sha256": "ac27abd6450a64dd94467580a02fe6235156d5b92f2926ebbc8e7489df64e0be",
+        "woff2_sha256": "9f9e5597981645d576b209a25021c5221e8644a4580581f44e8b4ef954d95d03",
+        "ttf_bytes": 137784,
+        "woff2_bytes": 40348,
+        "postscript": "IBMPlexMono-Bold",
+        "version": "Version 2.3",
+        "copyright": "Copyright 2017 IBM Corp. All rights reserved.",
+        "weight": 700,
+        "italicAngle": 0.0,
+        "axes": null
+      },
+      "IBMPlexMono-Italic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/01d5d9f05246fb7090a8403b81257535cb1a088b/ofl/ibmplexmono/IBMPlexMono-Italic.ttf",
+          "sha256": "3362fc791b0652193328b862c1c5f23a789bc7288b1617fa63302f88689a2a34"
+        },
+        "ttf_sha256": "3362fc791b0652193328b862c1c5f23a789bc7288b1617fa63302f88689a2a34",
+        "woff2_sha256": "ee9d5440c380188b64e98ebbfe6b6aa45f3299573e39f86f97456290320772b8",
+        "ttf_bytes": 143920,
+        "woff2_bytes": 43716,
+        "postscript": "IBMPlexMono-Italic",
+        "version": "Version 2.3",
+        "copyright": "Copyright 2017 IBM Corp. All rights reserved.",
+        "weight": 400,
+        "italicAngle": -9.0,
+        "axes": null
+      },
+      "IBMPlexMono-BoldItalic": {
+        "source": {
+          "url": "https://raw.githubusercontent.com/google/fonts/01d5d9f05246fb7090a8403b81257535cb1a088b/ofl/ibmplexmono/IBMPlexMono-BoldItalic.ttf",
+          "sha256": "af4e05a761e98c1adf064c48a6352c9bec1a6ad70982cd2a544149323391f98e"
+        },
+        "ttf_sha256": "af4e05a761e98c1adf064c48a6352c9bec1a6ad70982cd2a544149323391f98e",
+        "woff2_sha256": "ea6bad6fa3077ee1a65ba470d5c7bda931a52f91f1f5a26b800ccd5401462d3d",
+        "ttf_bytes": 144512,
+        "woff2_bytes": 44280,
+        "postscript": "IBMPlexMono-BoldItalic",
+        "version": "Version 2.3",
+        "copyright": "Copyright 2017 IBM Corp. All rights reserved.",
+        "weight": 700,
+        "italicAngle": -9.0,
+        "axes": null
+      }
+    }
+  }
+}

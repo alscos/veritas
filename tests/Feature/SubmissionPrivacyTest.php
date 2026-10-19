@@ -52,6 +52,42 @@ class SubmissionPrivacyTest extends TestCase
         $this->assertSame($signature,Certificate::find($sealed['certificate']['id'])->signature);
         $this->withHeader('X-InkGroove-User',(string)$b->id)->patchJson($path,['revision'=>(int) \App\Models\Document::findOrFail($doc->id)->revision,'content_html'=>'wrong identity'])->assertUnauthorized();
     }
+    public function test_direct_submission_requires_existing_account_after_version_authorization(): void
+    {
+        $a=User::create(['name'=>'A','email'=>'sender@example.test','password'=>'Fictitious12345']);
+        $b=User::create(['name'=>'B','email'=>'recipient@example.test','password'=>'Fictitious12345']);
+        $doc=Document::create(['owner_id'=>$a->id,'content_html'=>'<p>Exact</p>','word_count'=>1]);
+        $this->actingAs($a);
+        $this->postJson('/api/documents/'.$doc->id.'/events',['session_id'=>(string) Str::uuid(),'events'=>[['sequence'=>1,'event_type'=>'insert','after_html'=>'<p>Exact</p>','elapsed_ms'=>1000]]])->assertOk();
+        $seal=$this->postJson('/api/documents/'.$doc->id.'/seal')->assertCreated()->json();
+        $v=$seal['version'];
+        foreach (['es'=>'El destinatario debe tener una cuenta en InkGroove. Comprueba el correo de su cuenta.', 'en'=>'The recipient must have an InkGroove account. Check the email address of their account.'] as $locale=>$message) {
+            $this->postJson('/api/submissions',['document_version_id'=>$v['id'],'recipient_email'=>'missing@example.test','note'=>'Keep note'],['Accept-Language'=>$locale])->assertUnprocessable()->assertJsonPath('errors.recipient_email.0',$message);
+            $this->assertDatabaseCount('submissions',0);
+        }
+        $this->postJson('/api/submissions',['document_version_id'=>$v['id'],'recipient_email'=>strtoupper($a->email)])->assertUnprocessable();
+        $this->assertDatabaseCount('submissions',0);
+        $this->actingAs($b)->postJson('/api/submissions',['document_version_id'=>$v['id'],'recipient_email'=>'missing@example.test'])->assertNotFound();
+        $this->actingAs($a)->postJson('/api/submissions',['document_version_id'=>$v['id'],'recipient_email'=>'RECIPIENT@EXAMPLE.TEST','note'=>'Keep note'])->assertCreated()->assertJsonPath('submission.recipient_user_id',$b->id)->assertJsonPath('submission.document_version_id',$v['id'])->assertJsonPath('submission.recipient_email',$b->email);
+        $this->assertDatabaseCount('submissions',1);
+    }
+
+    public function test_old_direct_record_is_not_linked_when_matching_account_exists(): void
+    {
+        $a=User::create(['name'=>'A','email'=>'old-sender@example.test','password'=>'Fictitious12345']);
+        $b=User::create(['name'=>'B','email'=>'old-recipient@example.test','password'=>'Fictitious12345']);
+        $doc=Document::create(['owner_id'=>$a->id,'content_html'=>'<p>Old</p>','word_count'=>1]);
+        $this->actingAs($a)->postJson('/api/documents/'.$doc->id.'/events',['session_id'=>(string) Str::uuid(),'events'=>[['sequence'=>1,'event_type'=>'insert','after_html'=>'<p>Old</p>','elapsed_ms'=>1000]]])->assertOk();
+        $v=$this->postJson('/api/documents/'.$doc->id.'/seal')->assertCreated()->json('version');
+        $old=\App\Models\Submission::create(['document_version_id'=>$v['id'],'sender_id'=>$a->id,'recipient_email'=>$b->email,'recipient_user_id'=>null,'submitted_at'=>now()]);
+        $this->getJson('/api/submissions')->assertJsonPath('sent.0.recipient_user_id',null);
+        $this->getJson('/api/submissions/'.$old->id)->assertOk();
+        $this->actingAs($b)->getJson('/api/submissions')->assertJsonCount(0,'received');
+        $this->getJson('/api/submissions/'.$old->id)->assertNotFound();
+        $this->getJson('/api/documents/'.$doc->id.'/timeline?version_id='.$v['id'])->assertNotFound();
+        $this->assertNull($old->fresh()->recipient_user_id);
+    }
+
     public function test_logout_response_remains_valid_after_guard_identity_is_cleared(): void
     {
         $a=User::create(['name'=>'A','email'=>'logout-a@example.test','password'=>'Fictitious12345']);

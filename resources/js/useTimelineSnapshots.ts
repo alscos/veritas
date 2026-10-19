@@ -42,9 +42,9 @@ export function cacheSnapshots(cache: Map<number, string>, received: Map<number,
   }
 }
 
-export function useTimelineSnapshots(documentId: string | undefined, events: WritingEvent[], index: number) {
+export function useTimelineSnapshots(documentId: string | undefined, events: WritingEvent[], index: number, versionId?: string) {
   // A separate store per document prevents late responses crossing document scopes.
-  const store = useMemo(() => ({ cache: new Map<number, string>(), failed: new Set<number>() }), [documentId]);
+  const store = useMemo(() => ({ cache: new Map<number, string>(), failed: new Set<number>() }), [documentId, versionId]);
   const selection = useRef({ events, index });
   const pump = useRef<() => void>(() => {});
   const [, render] = useState(0);
@@ -60,6 +60,7 @@ export function useTimelineSnapshots(documentId: string | undefined, events: Wri
       const ids = snapshotIdsToLoad(currentEvents, currentIndex, store.cache, store.failed);
       if (!ids.length) return;
       const query = new URLSearchParams();
+      if (versionId) query.set('version_id', versionId);
       ids.forEach(id => query.append('snapshot_ids[]', String(id)));
       request = new AbortController();
       void api<{ events: WritingEvent[] }>(`/documents/${documentId}/timeline?${query}`, { signal: request.signal })
@@ -88,7 +89,7 @@ export function useTimelineSnapshots(documentId: string | undefined, events: Wri
     pump.current = load;
     load();
     return () => { disposed = true; request?.abort(); pump.current = () => {}; };
-  }, [documentId, store]);
+  }, [documentId, versionId, store]);
 
   useEffect(() => { pump.current(); }, [events, index, store]);
   const event = events[index] ?? events[0];
