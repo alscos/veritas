@@ -47,16 +47,27 @@ final class VersionShareGate
                     $q->where('g.audience_mode', 'signed_in_link')->orWhere(function ($q) use ($visitor) {
                         $q->where('g.audience_mode', 'restricted')->whereExists(function ($q) use ($visitor) {
                             $q->selectRaw('1')->from('version_share_recipients as r')
-                                ->join('submissions as s', 's.recipient_user_id', '=', 'r.user_id')
                                 ->whereColumn('r.grant_id', 'g.id')->where('r.user_id', $visitor)
-                                ->whereColumn('s.document_version_id', 'g.version_id')->whereColumn('s.sender_id', 'g.owner_id');
+                                ->where(function ($q) {
+                                    $q->where(function ($q) {
+                                        $q->whereNull('g.share_operation_key')->whereExists(function ($q) {
+                                            $q->selectRaw('1')->from('submissions as s')->whereColumn('s.recipient_user_id','r.user_id')
+                                                ->whereColumn('s.document_version_id','g.version_id')->whereColumn('s.sender_id','g.owner_id');
+                                        });
+                                    })->orWhere(function ($q) {
+                                        $q->whereNotNull('g.share_operation_key')->whereExists(function ($q) {
+                                            $q->selectRaw('1')->from('version_share_deliveries as delivery')
+                                                ->whereColumn('delivery.grant_id','g.id')->whereColumn('delivery.user_id','r.user_id');
+                                        });
+                                    });
+                                });
                         });
                     });
                 });
         }
         if ($lock) $q->lockForUpdate();
         $row = $q->first(['g.id', 'g.owner_id', 'g.document_id', 'g.version_id', 'g.level',
-            'g.audience_mode', 'g.created_at', 'g.expires_at', 'g.time_basis', 'g.created_at_epoch', 'g.expires_at_epoch']);
+            'g.audience_mode', 'g.created_at', 'g.expires_at', 'g.time_basis', 'g.created_at_epoch', 'g.expires_at_epoch','g.never_expires','g.display_title_at_issue']);
         abort_unless($row && GrantTime::active($row), 404);
         $row->visitor_id = $visitor;
         return $row;
@@ -67,10 +78,15 @@ final class VersionShareGate
     {
         $this->fresh();
         abort_unless(preg_match('/^[A-Za-z0-9_-]{43}$/D', $secret) === 1, 404);
-        $digest = hash('sha256', $secret);
+        return $this->readDigest($request, hash('sha256', $secret), $level, $read);
+    }
+
+    private function readDigest(Request $request, string $digest, int $level, callable $read): mixed
+    {
+        $this->fresh();
         $before = $this->active($request, $digest, $level);
         $owner = User::query()->select(['id'])->findOrFail($before->owner_id);
-        $result = $read($owner, $before->document_id, $before->version_id);
+        $result = $read($owner, $before->document_id, $before->version_id, $before);
         $this->fresh();
         if ($level !== 3) {
             abort_unless($before == $this->active($request, $digest, $level), 404);
@@ -95,6 +111,30 @@ final class VersionShareGate
         });
     }
 
+    /** Nominal receipt is an identity-bound reference, never a bearer capability.
+     * No legacy submission is created and VersionAccess remains unchanged.
+     */
+    public function deliveryResponse(Request $request, string $grant, string $resource = 'page', int $after = 0, ?string $image = null, ?int $event = null): mixed
+    {
+        $this->fresh();
+        $visitor = $this->visitor($request);
+        abort_unless($visitor !== null, 401);
+        $row = DB::table('version_summary_grants as g')->join('version_share_deliveries as d','d.grant_id','=','g.id')
+            ->where('g.id',$grant)->where('d.user_id',$visitor)->where('g.level',3)
+            ->where('g.audience_mode','restricted')->whereNotNull('g.share_operation_key')->first(['g.digest']);
+        abort_unless($row,404);
+        return $this->readDigest($request,$row->digest,3,function ($owner,$document,$version) use ($resource,$after,$image,$event) {
+            if ($resource === 'image') {
+                abort_unless(is_string($image),404);
+                $verified=app(SealedVersionReader::class)->image($owner,$document,$version,$image,$event);
+                return response($verified['bytes'],200,['Content-Type'=>$verified['mime']]);
+            }
+            if ($resource === 'pdf') return app(\App\Http\Controllers\VersionPdfController::class)->ownedSource($owner,$document,$version);
+            abort_unless($resource === 'page',404);
+            return response()->json(app(SealedVersionReader::class)->page($owner,$document,$version,$after,$event));
+        });
+    }
+
     /** Same card for all fixed levels. The client cannot request an elevation. */
     public function cardResponse(Request $request, #[\SensitiveParameter] string $secret, int $after = 0): \Illuminate\Http\JsonResponse
     {
@@ -102,10 +142,10 @@ final class VersionShareGate
         abort_unless(preg_match('/^[A-Za-z0-9_-]{43}$/D', $secret) === 1, 404);
         $level = DB::table('version_summary_grants')->where('digest', hash('sha256', $secret))->value('level');
         abort_unless(in_array((int)$level, [1,2,3], true), 404);
-        return $this->read($request, $secret, (int)$level, function ($owner, $document, $version) use ($level, $after) {
+        return $this->read($request, $secret, (int)$level, function ($owner, $document, $version, $grant) use ($level, $after) {
             $c = \App\Models\Certificate::where('document_version_id', $version)->firstOrFail();
             abort_unless(PublicCertificate::valid($c), 409);
-            $result = ['level'=>(int)$level, 'seal'=>PublicCertificate::summary($c) + ['version_number'=>$c->signed_payload['version'] ?? null]];
+            $result = ['expires_at'=>GrantTime::iso($grant,'expires_at'), 'level'=>(int)$level, 'seal'=>PublicCertificate::summary($c) + ['version_number'=>$c->signed_payload['version'] ?? null]];
             if ((int)$level >= 2) $result['summary'] = VersionSummaryCapabilities::project(
                 app(HistoricalVersionSummary::class)->summarize($owner, $document, $version));
             if ((int)$level === 3) $result['reading'] = app(SealedVersionReader::class)->page($owner, $document, $version, $after);

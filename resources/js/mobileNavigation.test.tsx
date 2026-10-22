@@ -39,7 +39,7 @@ it('keeps the workspace editor and single history reader through panel tabs and 
   await click('.evidence-access button');await click('#evidence-tab-versions');await click('.evidence-mobile-heading button');
   expect(host.querySelector('[data-editor]')).toBe(editor);expect(editor.innerHTML).toBe(html);
   expect(vi.mocked(fetch).mock.calls.length).toBe(before);expect(historyCalls()).toBe(1);
-  expect(host.querySelectorAll('.sealed-pdf-choice')).toHaveLength(1);expect(host.querySelector('.save-state')?.textContent).toBe('Todo guardado');
+  expect(host.querySelectorAll('.certificate-card')).toHaveLength(1);expect(host.querySelector('.save-state')?.textContent).toBe('Todo guardado');
   await click('.evidence-access button');await click('.process-card');
   expect(host.querySelector('.timeline-view')).not.toBeNull();expect(host.querySelector('[data-editor]')).toBe(editor);
   expect(host.querySelector<HTMLElement>('.editor-layout')!.style.display).toBe('none');
@@ -61,7 +61,7 @@ it('replaces document identity and shows localized empty versions without previo
   expect(host.querySelector('[role=dialog]')?.textContent).toContain('No sealed versions yet.');
 });
 
-it('opens management for the exact selected sealed version from ordinary Versiones without editor writes',async()=>{
+it('saves the unchanged draft and opens the unified wizard for the exact selected sealed version',async()=>{
   const original=vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async(...args)=>{
     const response=await original(...args);const data=await response.json();
@@ -73,14 +73,23 @@ it('opens management for the exact selected sealed version from ordinary Version
   const editor=host.querySelector('[data-editor]');const html=editor?.innerHTML;
   const before=vi.mocked(fetch).mock.calls.length;
   await click('.evidence-access button:nth-child(2)');
-  const link=host.querySelector<HTMLAnchorElement>('a[href^="/process-summary/share/manage/"]')!;
-  expect(link.getAttribute('href')).toBe('/process-summary/share/manage/d1/v2');
-  expect(link.target).toBe('_blank');expect(link.rel).toContain('noreferrer');
-  const select=link.parentElement!.querySelector('select')!;
+  const card=host.querySelector('.certificate-card')!;
+  const select=card.querySelector('select')!;
+  expect(select.value).toBe('v2');
   await act(async()=>{select.value='v1';select.dispatchEvent(new Event('change',{bubbles:true}));});
-  expect(link.getAttribute('href')).toBe('/process-summary/share/manage/d1/v1');
-  await act(async()=>setLocale('en'));expect(link.textContent).toBe('Share sealed version');
-  expect(vi.mocked(fetch).mock.calls.length).toBe(before);
+  expect(select.value).toBe('v1');
+  await act(async()=>setLocale('en'));
+  const issue=[...card.querySelectorAll('button')].find(b=>b.textContent==='Issue / share')!;
+  expect(issue).toBeTruthy();
+  await act(async()=>issue.click());
+  expect(host.querySelector('[role=dialog]')?.textContent).toContain('VRT-SYNTHETIC-1');
+  expect(host.querySelector('[role=dialog]')?.textContent).not.toContain('VRT-SYNTHETIC-2');
+  const saves=vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==='PATCH');
+  expect(saves).toHaveLength(1);
+  expect(saves[0][0]).toBe('/api/documents/d1');
+  expect(JSON.parse(String(saves[0][1]?.body)).content_html).toBe(documents[0].content_html);
+
+  expect(vi.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('/version-shares'))).toHaveLength(0);
   expect(host.querySelector('[data-editor]')).toBe(editor);expect(editor?.innerHTML).toBe(html);
   expect(lifecycle.mounts).toBe(1);expect(lifecycle.unmounts).toBe(0);
 });

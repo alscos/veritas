@@ -49,7 +49,7 @@ final class VersionSummaryCapabilitiesTest extends TestCase
         $this->actingAs($a)->postJson('/api/documents/'.$d->id.'/seal')->assertCreated();self::assertSame($r,$s->redeem($one['secret']));
         $s->revoke($a,$d->id,$v,$one['grant']['id']);$s->revoke($a,$d->id,$v,$one['grant']['id']);
         $this->denied(fn()=>$s->redeem($one['secret']));self::assertSame($r,$s->redeem($two['secret']));
-        foreach(['','VRT-123','x'.substr($two['secret'],1),str_repeat('A',43)] as $bad)$this->denied(fn()=>$s->redeem($bad));
+        foreach(['','VRT-123',($two['secret'][0]==='x'?'y':'x').substr($two['secret'],1),str_repeat('A',43)] as $bad)$this->denied(fn()=>$s->redeem($bad));
         $this->travel(31)->days();$this->denied(fn()=>$s->redeem($two['secret']));
     }
     public function test_rejects_inherited_transactions_even_in_sqlite(): void {

@@ -55,7 +55,7 @@ it.each([1, 2])('shows only the projection actually received at level %s', async
   vi.stubGlobal('fetch', vi.fn(async () => response(card(level)))); await act(async () => root.render(<VersionShareApp initialSecret={secret} />)); await click('Consultar / Reintentar');
   expect(node.querySelector('article')).toBeNull(); expect(node.textContent!.includes('Directas: 1')).toBe(level === 2);
 });
-it('owner defaults to restricted, emits selected integer accounts, copies once and revokes exact grant', async () => {
+it('owner defaults to restricted, emits selected emails, copies once and revokes exact grant', async () => {
   const grant = { id: 'g1', level: 3, audience_mode: 'restricted', label: null, state: 'active', created_at: '2026-10-18', expires_at: '2026-10-25' };
   let issued = false; let revoked = false;
   const fetch = vi.fn(async (url: string, options: RequestInit) => {
@@ -65,15 +65,15 @@ it('owner defaults to restricted, emits selected integer accounts, copies once a
   }); vi.stubGlobal('fetch', fetch); const copy = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
   await act(async () => root.render(<VersionShareApp documentId="doc" versionId="version" initialSecret="" />));
   const select = node.querySelectorAll('select')[1]; await act(async () => { select.value = '3'; select.dispatchEvent(new Event('change', { bubbles: true })); });
-  expect((node.querySelector('input[type=radio]') as HTMLInputElement).checked).toBe(true); expect([...node.querySelectorAll('button')].find(b => b.textContent === 'Emitir concesión')!.disabled).toBe(true);
-  await act(async () => (node.querySelector('input[type=checkbox]') as HTMLInputElement).click()); await click('Emitir concesión');
-  const issueCall = fetch.mock.calls.find(([, options]) => options.method === 'POST')!; expect(JSON.parse(issueCall[1].body as string).recipient_ids).toEqual([7]);
+  expect((node.querySelector('input[type=radio]') as HTMLInputElement).checked).toBe(true); expect([...node.querySelectorAll('button')].find(b => b.textContent === 'Emitir / compartir')!.disabled).toBe(true);
+  await act(async () => { const input = node.querySelector('textarea')!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'synthetic@example.test'); input.dispatchEvent(new Event('input', {bubbles:true})); }); await click('Emitir / compartir');
+  const issueCall = fetch.mock.calls.find(([, options]) => options.method === 'POST')!; expect(JSON.parse(issueCall[1].body as string).recipient_emails).toEqual(['synthetic@example.test']);
   await click('Copiar enlace'); expect(copy).toHaveBeenCalledWith(`https://example.test/process-summary/share#token=${secret}`); expect(node.textContent).toContain('Copiado');
   expect(node.textContent).toContain('Secreto no recuperable'); await click('Revocar'); expect(node.querySelector('input[readonly]')).toBeNull(); expect(node.textContent).toContain('revoked'); expect(fetch.mock.calls.some(([url]) => url.endsWith('/g1/revoke'))).toBe(true);
 });
-it.each([1, 2, 3] as const)('builds PDF exact sealed source and independent grant QR at level %s', level => {
+it.each([1, 2, 3] as const)('renders full owner PDF and scoped QR at level %s', level => {
   const source: PdfSource = { version_id: 'exact', version_number: 2, snapshot_html: '<p>á génesis SELLADA</p><p></p>', page_settings: null, certificate_code: 'VRT-SYNTHETIC', issued_at: '2026-10-18', format_version: 2, public_url: 'https://example.test/verify/VRT-SYNTHETIC', images: {}, share: { url: `https://example.test/process-summary/share#token=${String(level).repeat(43)}`, level, expires_at: '2026-10-25' } };
   const before = JSON.stringify(source); const definition = sealedDefinition(source); const out = JSON.stringify(definition);
-  expect(out).toContain(`"qr":"${source.share!.url}"`); expect(out).toContain('SELLADA'); expect(out).toContain('génesis'); expect(out).toContain('nivel fijo '+level); expect(out).toContain('no verifica los bytes'); expect(JSON.stringify(source)).toBe(before);
+  expect(out).toContain(`"qr":"${source.share!.url}"`); expect(out).toContain('SELLADA'); expect(out).toContain('génesis'); expect(out).toContain('Nivel '+level); expect(out).toContain('no verifica los bytes'); expect(JSON.stringify(source)).toBe(before);
   expect(() => sealedDefinition({ ...source, share: { ...source.share!, url: 'https://foreign.test/process-summary/share#token=' + secret } })).toThrow();
 });

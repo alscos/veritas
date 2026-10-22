@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
-import SubmissionsView from './SubmissionsView';
+import { AcademicSubmissionsView as SubmissionsView } from './SubmissionsView';
 import { resetIdentity } from './api';
 import { setLocale, t } from './i18n';
 let container: HTMLDivElement; let root: Root;

@@ -6,10 +6,10 @@ use Carbon\CarbonImmutable;
 /** SQL timestamps have no offset. New grants use UTC epoch integers; NULL is legacy Madrid. */
 final class GrantTime
 {
-    public static function issuance(int $days): array
+    public static function issuance(?int $days): array
     {
         $start = CarbonImmutable::now('UTC')->startOfSecond();
-        $end = $start->addSeconds($days * 86400);
+        $end = $days === null ? $start : $start->addSeconds($days * 86400);
         // Epoch integers are authoritative; TIMESTAMP's SQL session conversion
         // must never decide access. Old mandatory columns are compatibility shadows.
         return ['time_basis'=>'epoch', 'created_at_epoch'=>$start->getTimestamp(),
@@ -59,12 +59,21 @@ final class GrantTime
 
     public static function active(object $row): bool
     {
+        if (self::indefinite($row)) return true;
         try { return self::instant($row, 'expires_at')->greaterThan(CarbonImmutable::now('UTC')); }
         catch (\Throwable) { return false; }
     }
 
-    public static function iso(object $row, string $field): string
+    public static function indefinite(object $row): bool
     {
+        // Only explicitly marked new UTC rows. Missing/legacy NULL dates fail closed.
+        return (int)($row->never_expires ?? 0) === 1 && ($row->time_basis ?? null) === 'epoch'
+            && ($row->expires_at_epoch ?? null) === null && isset($row->created_at_epoch);
+    }
+
+    public static function iso(object $row, string $field): ?string
+    {
+        if ($field === 'expires_at' && self::indefinite($row)) return null;
         return self::instant($row, $field)->toIso8601String();
     }
 }

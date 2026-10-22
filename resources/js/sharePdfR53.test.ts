@@ -16,10 +16,10 @@ it('exports the exact hostile seed literal as inert text without modifying sourc
 import { vi, afterEach } from 'vitest';
 import { sharePdf, downloadSharePdf } from './sharePdf';
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
-it.each([1, 2, 3] as const)('uses the issued QR and fixed level %s', level => {
+it.each([1, 2, 3] as const)('renders owner-authorized full content with an independently scoped QR at level %s', level => {
  const url = 'https://example.test/process-summary/share#token=' + 'A'.repeat(43);
  const json = JSON.stringify(sealedDefinition({ ...source, share: { url, level, expires_at: '2026-10-25' } }));
- expect(json).toContain(`"qr":"${url}"`); expect(json).toContain(`nivel fijo ${level}`);
+ expect(json).toContain('pegado'); expect(json).toContain(`"qr":"${url}"`); expect(json).toContain(`Nivel ${level}`);
  expect(json).not.toContain(`"qr":"${source.public_url}"`);
 });
 it('ignores hostile styles/events without executing or exporting resources', () => {

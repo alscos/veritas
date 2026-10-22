@@ -2,19 +2,40 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Certificate, Document, DocumentImage, DocumentVersion};
+use App\Models\{Certificate, Document, DocumentImage, DocumentVersion, User};
 use App\Support\{PublicCertificate, VersionAccess};
 use Illuminate\Http\{JsonResponse, Request};
 use Illuminate\Support\Facades\DB;
 
 final class VersionPdfController
 {
-    /** Browser PDF generation source. No draft, event, title or account is read. */
+    /** Authenticated PDF source. No draft/event/account is read; title is a current document label. */
     public function source(Request $request, string $document, string $version): JsonResponse
     {
         $doc = Document::query()->select(['id', 'owner_id'])->findOrFail($document);
         VersionAccess::exact($request, $doc, $version);
-        return DB::transaction(function () use ($document, $version): JsonResponse {
+        $isOwner = (int)$request->user()->id === (int)$doc->owner_id;
+        $response = $this->buildSource($document, $version, $isOwner);
+        if ($isOwner) {
+            $summary = app(\App\Support\HistoricalVersionSummary::class)->summarize($request->user(), $document, $version);
+            $data = $response->getData(true);
+            $data['historical_counts'] = $summary['counts'];
+            $response->setData($data);
+        }
+        return $response;
+    }
+
+    /** Internal Gate primitive, never routed; authorization rechecked by Gate after encoding. */
+    public function ownedSource(User $owner, string $document, string $version): JsonResponse
+    {
+        abort_unless($owner->exists && Document::whereKey($document)->where('owner_id',$owner->id)->exists()
+            && DocumentVersion::whereKey($version)->where('document_id',$document)->whereNotNull('sealed_at')->exists(),404);
+        return $this->buildSource($document,$version);
+    }
+
+    private function buildSource(string $document, string $version, bool $ownerTitle = false): JsonResponse
+    {
+        return DB::transaction(function () use ($document, $version, $ownerTitle): JsonResponse {
             $length = fn ($column) => DB::connection()->getDriverName() === 'sqlite' ? "length(CAST($column AS BLOB))" : "OCTET_LENGTH($column)";
             $size = DB::table('document_versions')->where('id', $version)->selectRaw($length('snapshot_html').' + COALESCE('.$length('page_settings').',0) AS bytes')->first();
             abort_if(!$size || (int) $size->bytes > 250000, 413, __('inkgroove.pdf_unavailable'));
@@ -73,6 +94,7 @@ final class VersionPdfController
                 $images[$src] = 'data:'.$info['mime'].';base64,'.base64_encode($data);
             }
             return response()->json([
+                'document_title' => $ownerTitle ? Document::whereKey($document)->value('title') : null,
                 'version_id' => $v->id, 'version_number' => $v->version_number,
                 'snapshot_html' => $v->snapshot_html, 'page_settings' => $v->page_settings,
                 'certificate_code' => $c->certificate_code, 'issued_at' => $c->issued_at?->toIso8601String(),

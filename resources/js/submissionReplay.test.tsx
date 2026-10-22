@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import SubmissionsView, { SubmissionReplay } from './SubmissionsView';
+import { AcademicSubmissionsView as SubmissionsView, SubmissionReplay } from './SubmissionsView';
 import { resetIdentity } from './api';
 import { setLocale, t } from './i18n';
 import type { DocumentVersion, WritingEvent } from './types';

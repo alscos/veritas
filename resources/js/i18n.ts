@@ -2,6 +2,16 @@ import { useSyncExternalStore } from "react";
 
 export type Locale = "es" | "en";
 export const EN: Record<string, string> = {
+  "Versión sellada exacta": "Exact sealed version",
+  "Enviadas": "Sent",
+  "Versiones selladas": "Sealed versions",
+  "Emitir / compartir": "Issue / share",
+  "Volver a Entregas": "Back to Deliveries",
+  "Entrega académica": "Academic submission",
+  "Compartir esta versión": "Share this version",
+  "Ahora no": "Not now",
+  "Entregas académicas independientes": "Independent academic submissions",
+
   "Actividad": "Activity",
   "Actividad y versiones": "Activity and versions",
   "Todavía no hay versiones selladas.": "No sealed versions yet.",

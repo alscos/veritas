@@ -30,6 +30,11 @@ final class VersionShareAudience
             || !User::whereKey($visitor->getKey())->exists()) return false;
         if (($grant->audience_mode ?? null) === 'signed_in_link') return true;
         if (($grant->audience_mode ?? null) !== 'restricted') return false;
+        if (!empty($grant->share_operation_key)) {
+            return DB::table('version_share_recipients as r')->join('version_share_deliveries as d',function ($j) {
+                $j->on('d.grant_id','=','r.grant_id')->on('d.user_id','=','r.user_id');
+            })->where('r.grant_id',$grant->id)->where('r.user_id',$visitor->id)->exists();
+        }
         return DB::table('version_share_recipients as r')
             ->join('submissions as s', 's.recipient_user_id', '=', 'r.user_id')
             ->where('r.grant_id', $grant->id)->where('r.user_id', $visitor->getKey())

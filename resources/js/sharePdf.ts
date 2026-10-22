@@ -1,12 +1,15 @@
 import { preparePdfImages, sealedDefinition, type PdfSource } from './sealedPdf';
+import { receiptDefinition, type SealReceipt } from './sealReceipt';
 export type SharePdfFailure = 'content' | 'worker' | 'timeout' | 'cancelled' | 'download';
 export class SharePdfError extends Error {
   constructor(public code: SharePdfFailure) { super(code); }
 }
-export async function sharePdf(source: PdfSource, english: boolean, signal: AbortSignal): Promise<Blob> {
+export async function sharePdf(source: PdfSource | SealReceipt, english: boolean, signal: AbortSignal): Promise<Blob> {
   if (signal.aborted) throw new SharePdfError('cancelled');
   let definition;
-  try { definition = sealedDefinition(await preparePdfImages(source), english); }
+  try {
+    definition = 'kind' in source ? receiptDefinition(source, english) : sealedDefinition(await preparePdfImages(source), english);
+  }
   catch { throw new SharePdfError(signal.aborted ? 'cancelled' : 'content'); }
   if (signal.aborted) throw new SharePdfError('cancelled');
   return new Promise((resolve, reject) => {

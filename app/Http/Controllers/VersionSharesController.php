@@ -28,11 +28,14 @@ final class VersionSharesController
     public function issue(Request $r, string $document, string $version, VersionShares $s) {
         return $this->safe(function () use ($r,$document,$version,$s) {
             abort_unless($r->isJson() && $r->query->count()===0,404);
-            $v=$r->validate(['level'=>['required','integer','in:1,2,3'],'days'=>['required','integer','min:1','max:30'],
+            $v=$r->validate(['level'=>['required','integer','in:1,2,3'],'days'=>['present','nullable','integer','min:1','max:30'],
                 'label'=>['nullable','string','max:120'],'audience_mode'=>['sometimes','in:restricted,signed_in_link'],
                 'recipient_ids'=>['sometimes','array','max:100'],'recipient_ids.*'=>['integer','min:1'],
+                'operation_key'=>['sometimes','required','uuid'],
+                'recipient_emails'=>['sometimes','array','max:100'],
+                'recipient_emails.*'=>['required','string','email:rfc','max:255'],
                 'forwardable_accepted'=>['sometimes','boolean']]);
-            $v['level']=(int)$v['level'];$v['days']=(int)$v['days'];
+            $v['level']=(int)$v['level'];$v['days']=$v['days'] === null ? null : (int)$v['days'];
             // Reject numeric strings for recipient identity; the UI emits integer account IDs.
             foreach($v['recipient_ids'] ?? [] as $id) abort_unless(is_int($id),422);
             return response()->json($s->issue($r->user(),$document,$version,$v),201);

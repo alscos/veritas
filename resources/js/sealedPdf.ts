@@ -1,12 +1,16 @@
 import type { Content, ContentText, TDocumentDefinitions } from 'pdfmake/interfaces';
+import inkwell from '../brand/InkGroove-logo-tinta-naranja.svg?raw';
 import type { PageSettings } from './types';
 import { DEFAULT_PAGE, PAGE_FORMATS } from './pageLayout';
 import { contentFont, supportsText, pdfLineHeight } from './contentFonts';
 
 export type PdfSource = {
+  document_title?: string;
   version_id: string; version_number: number; snapshot_html: string; page_settings: PageSettings | null;
   certificate_code: string; issued_at: string | null; format_version: 2 | 3 | null;
-  share?: { url: string; level: 1 | 2 | 3; expires_at: string };
+  share?: { url: string; level: 1 | 2 | 3; expires_at: string | null };
+  title_at_issue?: string | null;
+  historical_counts?: { state: string; value: { direct: number; pasted: number; edited: number; total: number } | null; source: string | null; reason: string | null };
   public_url: string; images: Record<string, string>;
 };
 export class PdfUnsupported extends Error {}
@@ -33,11 +37,13 @@ export function sealedDefinition(source: PdfSource, english = false, policy: Pdf
   if (!/^VRT-[A-Z0-9]{1,64}$/.test(source.certificate_code)) reject();
   const url = new URL(source.public_url);
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== `/verify/${source.certificate_code}`) reject();
+  if ([source.document_title, source.title_at_issue].some(title => title && !supportsText('literata', false, false, title))) throw new PdfFontUnsupported('Unsupported title glyph');
   const share = source.share;
+  // M3.4E: owner-selected full PDF is separate from the public QR evidence.
   if (share) {
     const link = new URL(share.url);
     if (link.origin !== url.origin || link.pathname !== '/process-summary/share' || link.search || link.username || link.password
-      || !/^#token=[A-Za-z0-9_-]{43}$/.test(link.hash) || ![1, 2, 3].includes(share.level) || !Number.isFinite(Date.parse(share.expires_at))) reject();
+      || !/^#token=[A-Za-z0-9_-]{43}$/.test(link.hash) || ![1, 2, 3].includes(share.level) || (share.expires_at !== null && !Number.isFinite(Date.parse(share.expires_at)))) reject();
   }
   const consultationUrl = share?.url ?? source.public_url;
   const settings = source.page_settings ?? DEFAULT_PAGE;
@@ -99,6 +105,8 @@ export function sealedDefinition(source: PdfSource, english = false, policy: Pdf
     if (['S', 'DEL'].includes(node.tagName)) decorations.push('lineThrough');
     if (decorations.length) s.decoration = decorations;
     if (['SUB', 'SUP'].includes(node.tagName)) reject();
+    if (node.tagName === 'MARK' && node.getAttribute('data-origin') === 'paste') { s.color = '#8a3b00'; s.background = '#ffeddb'; }
+    if (node.tagName === 'MARK' && node.getAttribute('data-origin') === 'paste-edited') { s.color = '#1554aa'; s.background = '#e0edff'; }
     if (node.tagName === 'A') { s.color = '#29658b'; s.decoration = [...decorations, 'underline']; }
     // Links are text only: private/internal hyperlinks and user tokens never become PDF annotations.
     return [...node.childNodes].flatMap(n => inline(n, s));
@@ -170,21 +178,37 @@ export function sealedDefinition(source: PdfSource, english = false, policy: Pdf
     pageMargins: Array(4).fill(settings.margin * 72 / 25.4) as [number, number, number, number],
     // Disable glyph composition/ligatures so ToUnicode preserves NFC and NFD separately.
     // fontkit supports feature objects; pdfmake's declaration only lists arrays.
-    defaultStyle: { font: 'literata', fontSize: 12, color: '#17231f', lineHeight: pdfLineHeight('literata', false, false, 1.5), fontFeatures: { ccmp: false, liga: false, clig: false } as unknown as ContentText['fontFeatures'] },
+    defaultStyle: { font: 'literata', fontSize: 12, color: '#12352d', lineHeight: pdfLineHeight('literata', false, false, 1.25), fontFeatures: { ccmp: false, liga: false, clig: false } as unknown as ContentText['fontFeatures'] },
     images: pdfImages,
     info: { title: 'InkGroove', author: '', subject: '', keywords: '', creator: 'InkGroove' },
+    background: { canvas: [{ type: 'rect', x: 0, y: 0, w: (settings.orientation === 'landscape' ? dimensions.height : dimensions.width) * 72 / 25.4, h: (settings.orientation === 'landscape' ? dimensions.width : dimensions.height) * 72 / 25.4, color: '#fffefb' }] },
     content: [
-      { text: english ? 'Reconstructed presentation · historical appearance not accredited. Unmarked text uses Literata. Provenance is rendered as plain text.' : 'Presentación reconstruida · apariencia histórica no acreditada. Texto sin fuente explícita: Literata. La procedencia se representa como texto sin decoración.', fontSize: 9, color: '#56615d', margin: [0, 0, 0, 12] },
-      ...(policy === 'historical' ? [{ text: (english ? 'Historical PDF · approximate presentation' : 'PDF histórico · presentación aproximada') + '\n' + [...substitutions].sort().join('; '), fontSize: 11, margin: [0, 0, 0, 12] as [number, number, number, number] }] : []),
+      { svg: inkwell.replace(/<\?xml[^>]*>/, ''), width: Math.min(160, availableWidth), margin: [0, 0, 0, 10] },
+      { text: english ? 'Sealed version record' : 'Constancia de versión sellada', fontSize: 16, bold: true, margin: [0, 0, 0, 8] },
+      { text: source.title_at_issue ?? source.document_title ?? (english ? 'Historical title unavailable' : 'Título histórico no disponible'), fontSize: 20, margin: [0, 0, 0, 8] },
+      { text: source.title_at_issue != null ? (english ? 'Title fixed at issue; outside the original seal.' : 'Título fijado a la emisión; ajeno al sello original.') : source.document_title ? (english ? 'Current title supplied by the owner; historical title not certified.' : 'Título actual aportado por el propietario; no se certifica el título histórico.') : '', fontSize: 9 },
+      { text: `${english ? 'Version' : 'Versión'} ${source.version_number} · ${source.certificate_code}`, bold: true, margin: [0, 10, 0, 6] },
+      { text: `${english ? 'Sealed' : 'Sellado'}: ${source.issued_at ? new Date(source.issued_at).toLocaleString(english ? 'en-GB' : 'es-ES', { timeZone: 'UTC' }) + ' UTC' : (english ? 'Date unavailable' : 'Fecha no disponible')}${share ? ` · ${english ? 'Level' : 'Nivel'} ${share.level} · ${share.expires_at === null ? (english ? 'Never expires automatically' : 'Nunca caduca automáticamente') : (english ? 'Expires' : 'Caduca') + ': ' + new Date(share.expires_at).toLocaleString(english ? 'en-GB' : 'es-ES', { timeZone: 'UTC' }) + ' UTC'}` : ''}`, fontSize: 10, margin: [0, 0, 0, 8] },
+      { text: scope, fontSize: 9, margin: [0, 0, 0, 8] },
+      ...(share?.level === 2 ? countPanel(source, english) : []),
+      { text: english ? 'Reconstructed presentation; historical appearance not accredited. Recorded paste: orange; edited paste: blue. Unmarked text: Literata.' : 'Presentación reconstruida; apariencia histórica no acreditada. Pegado registrado: naranja; reelaborado: azul. Texto sin fuente explícita: Literata.', fontSize: 9, color: '#56615d', margin: [0, 0, 0, 10] },
+      ...(policy === 'historical' ? [{ text: (english ? 'Historical PDF · approximate presentation' : 'PDF histórico · presentación aproximada') + '\n' + [...substitutions].sort().join('; '), fontSize: 9, margin: [0, 0, 0, 10] as [number, number, number, number] }] : []),
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: availableWidth, y2: 0, lineWidth: 1, lineColor: '#12352d' }], margin: [0, 10, 0, 5] },
+      { text: english ? 'START OF DOCUMENT' : 'INICIO DEL DOCUMENTO', bold: true, fontSize: 9, color: '#12352d', margin: [0, 0, 0, 12] },
       ...body,
-      { text: english ? 'Sealed version' : 'Versión sellada', pageBreak: 'before', fontSize: 16, bold: true },
-      { text: `${source.certificate_code} · ${english ? 'Version' : 'Versión'} ${source.version_number}`, margin: [0, 12, 0, 8] },
-      { text: source.issued_at ?? (english ? 'Date unavailable' : 'Fecha no disponible') },
-      { text: scope, margin: [0, 12, 0, 8] },
-      { text: share ? (english ? `Forwardable bearer QR · fixed level ${share.level} · expires ${share.expires_at}. Level 3 requires a web account and the selected audience. Revocation affects this grant; it does not invalidate the seal or remove downloaded copies.` : `QR portador reenviable · nivel fijo ${share.level} · caduca ${share.expires_at}. Nivel 3 exige cuenta web y la audiencia elegida. Revocar afecta esta concesión; no invalida el sello ni retira copias descargadas.`) : english ? 'The QR only checks the stored payload HMAC. It does not evaluate revocation, civil identity, human authorship or AI use. It is not a qualified electronic signature.' : 'El QR sólo comprueba el HMAC del payload almacenado. No evalúa revocación, identidad civil, autoría humana o uso de IA. No es una firma electrónica cualificada.', margin: [0, 0, 0, 12] },
-      { text: english ? 'The PDF has no cryptographic signature of its own. The QR does not verify the bytes of this file.' : 'El PDF no incorpora una firma criptográfica propia. El QR no verifica los bytes de este archivo.', fontSize: 9, margin: [0, 0, 0, 12] },
-      { text: consultationUrl, link: consultationUrl, fontSize: 9, margin: [0, 0, 0, 18] },
-      { qr: consultationUrl, fit: 120, eccLevel: 'M' },
+      { text: english ? 'END OF DOCUMENT' : 'FIN DEL DOCUMENTO', bold: true, fontSize: 9, color: '#12352d', margin: [0, 8, 0, 5] },
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: availableWidth, y2: 0, lineWidth: 1, lineColor: '#12352d' }], margin: [0, 0, 0, 8] },
+      { unbreakable: true, margin: [0, 14, 0, 0], stack: [
+        { text: english ? 'InkGroove verification' : 'Verificación de InkGroove', fontSize: 14, bold: true, margin: [0, 0, 0, 8] },
+        { columns: [{ qr: consultationUrl, fit: 104, eccLevel: 'M', width: 114 }, { stack: [
+          { text: /^(localhost|127\.|\[::1\])/.test(url.hostname) || url.hostname.endsWith('.test') ? (english ? 'LOCAL DEMONSTRATION · no external validity' : 'DEMOSTRACIÓN LOCAL · sin validez externa') : (english ? (share ? 'Check current access at the link.' : 'Checks the stored payload signature only.') : (share ? 'Consulta la vigencia actual en el enlace.' : 'Sólo comprueba la firma del registro almacenado.')), bold: true, fontSize: 9 },
+          { text: share ? (english ? 'Levels 1/2: seal evidence only; level 3: authorized reader. Revocation stops future access; downloads and independent permissions remain.' : 'Niveles 1/2: sólo evidencia; nivel 3: lector autorizado. Revocar corta nuevas consultas; subsisten copias descargadas y permisos independientes.') : (english ? 'This public seal check does not evaluate access expiry or revocation. The downloaded copy cannot be revoked.' : 'La comprobación pública del sello no evalúa caducidad ni revocación de accesos. La copia descargada no se revoca.'), fontSize: 9, margin: [0, 6, 0, 6] },
+          { text: english ? 'This PDF has no cryptographic signature. The QR does not verify its bytes or certify human authorship.' : 'Este PDF no incorpora firma criptográfica. El QR no verifica los bytes de este archivo ni acredita autoría humana.', fontSize: 9 },
+          ...(share?.expires_at === null ? [{ text: english ? 'No automatic expiry; no guarantee of perpetual access or service.' : 'Sin expiración automática; sin garantía de acceso ni servicio perpetuos.', fontSize: 9 }] : []),
+        ] }], columnGap: 10 },
+        { text: consultationUrl, link: consultationUrl, fontSize: 8, margin: [0, 8, 0, 0] },
+      ] },
+
     ],
   };
 }
@@ -205,4 +229,19 @@ export async function preparePdfImages(source: PdfSource): Promise<PdfSource> {
   }
   if (Object.values(images).reduce((bytes, data) => bytes + data.length, 0) > 12 * 1024 * 1024) reject();
   return { ...source, images };
+}
+
+function countPanel(source: PdfSource, english: boolean): Content[] {
+  const h = source.historical_counts, c = h?.value;
+  const valid = c && h?.source === 'sealed_snapshot_html' && ['verified', 'limited'].includes(h.state)
+    && [c.direct, c.pasted, c.edited, c.total].every(n => Number.isSafeInteger(n) && n >= 0)
+    && c.total === c.direct + c.pasted + c.edited;
+  const labels = english ? ['Direct','Pasted unchanged','Reworked','Total'] : ['Directas','Pegadas sin modificar','Reelaboradas','Total'];
+  return [{ unbreakable: true, margin: [0, 10, 0, 12], stack: [
+    { text: english ? 'Authorized historical word counts' : 'Conteos históricos autorizados · palabras', bold: true, margin: [0, 0, 0, 6] },
+    { table: { widths: ['*','*','*','*'], body: [labels.map(text => ({ text, fontSize: 9, fillColor: '#edf3ec' })), (valid ? [c.direct,c.pasted,c.edited,c.total] : ['—','—','—','—']).map(text => ({ text: String(text), fontSize: 19, bold: true }))] }, layout: 'noBorders' },
+    { text: valid ? (english ? 'Source: verified sealed snapshot, never the current draft. Categories follow recorded word provenance; no proof of human authorship.' : 'Fuente: instantánea sellada verificada, nunca el borrador actual. Categorías según procedencia registrada de palabras; no prueba autoría humana.') : (english ? 'Data unavailable: no authorized historical breakdown.' : 'Dato no disponible: sin desglose histórico autorizado.'), fontSize: 9, margin: [0, 6, 0, 0] },
+    ...(h?.state === 'limited' ? [{ text: english ? 'Limited coverage: historical session set not independently proven.' : 'Cobertura limitada: conjunto de sesiones histórico no acreditado de forma independiente.', fontSize: 9 }] : []),
+    { text: english ? 'Direct: unmarked; pasted unchanged: paste; reworked: paste-edited. Mixed words follow the conservative historical counter.' : 'Directas: sin marca; pegadas sin modificar: paste; reelaboradas: paste-edited. Las palabras mixtas siguen el contador histórico conservador.', fontSize: 9 },
+  ] }];
 }

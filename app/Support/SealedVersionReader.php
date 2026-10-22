@@ -92,7 +92,7 @@ final class SealedVersionReader
                 $events[] = ['id'=>(int) $e->id, 'sequence'=>(int) $e->sequence, 'html'=>$html];
             }
             return ['version'=>['number'=>$v->version_number,'sealed_at'=>$v->sealed_at?->toIso8601String()],
-                'coverage'=>$coverage, 'snapshot_html'=>$this->boundedHtml($v->snapshot_html), 'events'=>$events,
+                'coverage'=>$coverage, 'total_events'=>$this->events($document, $boundary)->count(), 'snapshot_html'=>$this->boundedHtml($v->snapshot_html), 'events'=>$events,
                 'next_after'=>$more && $events ? $events[array_key_last($events)]['id'] : null];
         });
     }

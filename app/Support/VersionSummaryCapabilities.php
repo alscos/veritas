@@ -47,7 +47,7 @@ final class VersionSummaryCapabilities
         $this->own($owner, $document, $version);
         return DB::table('version_summary_grants')->where('owner_id', $owner->getKey())
             ->where('document_id', $document)->where('version_id', $version)
-            ->orderByDesc('created_at')->get(['id','created_at','expires_at','revoked_at','time_basis','created_at_epoch','expires_at_epoch'])
+            ->orderByDesc('created_at')->get(['id','created_at','expires_at','revoked_at','time_basis','created_at_epoch','expires_at_epoch','never_expires'])
             ->map(fn ($r) => $this->metadata($r))->all();
     }
 

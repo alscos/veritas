@@ -1,21 +1,26 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { ShareRequestError } from './VersionShareApp';
+import { nominalBase, nominalRequest } from './nominalTransport';
 import { api, ApiError, identityGeneration } from './api';
 import { getLocale, t } from './i18n';
 import type { DocumentVersion } from './types';
 import { preparePdfImages, sealedDefinition, PdfFontUnsupported, type PdfSource, type PdfPolicy } from './sealedPdf';
 
-export default function SealedPdfButton({ documentId, versionId, versionNumber }: { documentId: string; versionId: string; versionNumber?: number }) {
+export default function SealedPdfButton({ documentId, versionId, versionNumber, nominalGrant, onDenied }: { documentId: string; versionId: string; versionNumber?: number; nominalGrant?: string; onDenied?: () => void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const [policy, setPolicy] = useState<PdfPolicy>('strict');
   const policyId = useId();
+  const objectUrl = useRef<string | null>(null);
+  const transport = useRef<AbortController | null>(null);
   const attempt = useRef(0); const cancel = useRef<(() => void) | null>(null);
-  useEffect(() => { setBusy(false); setError(''); setPolicy('strict'); return () => { ++attempt.current; cancel.current?.(); }; }, [documentId, versionId]);
+  useEffect(() => { setBusy(false); setError(''); setPolicy('strict'); return () => { ++attempt.current; transport.current?.abort(); cancel.current?.(); if (objectUrl.current) { URL.revokeObjectURL(objectUrl.current); objectUrl.current = null; } }; }, [documentId, versionId, nominalGrant]);
   const download = async () => {
     const current = ++attempt.current; const epoch = identityGeneration();
     const active = () => current === attempt.current && epoch === identityGeneration();
     setBusy(true); setError('');
     try {
-      const source = await api<PdfSource>(`/documents/${documentId}/versions/${versionId}/pdf-source`);
+      const controller = new AbortController(); transport.current?.abort(); transport.current = controller;
+      const source: PdfSource = nominalGrant ? await (await nominalRequest(`${nominalBase}/${nominalGrant}/pdf`, controller.signal, {})).json() : await api<PdfSource>(`/documents/${documentId}/versions/${versionId}/pdf-source`);
       if (!active()) return;
       if (source.version_id !== versionId) throw new Error('Version mismatch');
       const prepared = await preparePdfImages(source); if (!active()) return;
@@ -30,14 +35,17 @@ export default function SealedPdfButton({ documentId, versionId, versionNumber }
         worker.postMessage(definition);
       });
       if (!active()) return;
+      if (nominalGrant) await nominalRequest(`${nominalBase}/${nominalGrant}/page`, transport.current!.signal, { after: 0 });
+      if (!active()) return;
       const blob = new Blob([bytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob); const link = document.createElement('a');
+      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+      const url = URL.createObjectURL(blob); objectUrl.current = url; const link = document.createElement('a');
       link.href = url; link.download = `${source.certificate_code}.pdf`; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (error) { if (active()) setError(error instanceof PdfFontUnsupported ? error.message : t(error instanceof ApiError && error.status === 503 ? 'La descarga PDF requiere configurar el origen público de consulta.' : 'No se pudo preparar el PDF. La versión o su formato no están disponibles para exportar.')); }
+    } catch (error) { if (active() && nominalGrant && error instanceof ShareRequestError && [401,403,404,409,410,419].includes(error.status)) onDenied?.(); if (active()) setError(error instanceof PdfFontUnsupported ? error.message : t(error instanceof ApiError && error.status === 503 ? 'La descarga PDF requiere configurar el origen público de consulta.' : 'No se pudo preparar el PDF. La versión o su formato no están disponibles para exportar.')); }
     finally { if (current === attempt.current) setBusy(false); }
   };
-  return <span className="sealed-pdf-action" aria-busy={busy}><label htmlFor={policyId}>{getLocale() === 'en' ? 'PDF presentation' : 'Presentación PDF'}</label><select id={policyId} disabled={busy} value={policy} onChange={e => setPolicy(e.target.value as PdfPolicy)}><option value="strict">{getLocale() === 'en' ? 'Current font catalog' : 'Catálogo de fuentes actual'}</option><option value="historical">{getLocale() === 'en' ? 'Historical PDF · approximate presentation' : 'PDF histórico · presentación aproximada'}</option></select>{policy === 'historical' && <small>{getLocale() === 'en' ? 'Downloading explicitly accepts replacement of recognized legacy fonts. The PDF lists replacements; original appearance is not accredited. Unsupported structures or glyphs stop export.' : 'Al descargar aceptas expresamente sustituir fuentes legadas reconocidas. El PDF enumera los cambios; no acredita la apariencia original. Estructuras o glifos no compatibles impiden exportar.'}</small>}<button className="sealed-pdf-download" aria-label={versionNumber === undefined ? undefined : `${t('Descargar PDF')} · ${t('Versión')} ${versionNumber}`} type="button" onMouseDown={event => event.preventDefault()} disabled={busy} onClick={() => void download()}>{t(busy ? 'Preparando el PDF…' : 'Descargar PDF')}</button><small>{getLocale() === "en" ? "Reconstructed presentation; historical appearance not accredited. The catalog rejects legacy fonts." : "Presentación reconstruida; apariencia histórica no acreditada. El catálogo rechaza fuentes heredadas."}</small>{busy && <button type="button" onClick={() => { ++attempt.current; cancel.current?.(); setBusy(false); setError(''); }}>{getLocale() === 'en' ? 'Cancel PDF' : 'Cancelar PDF'}</button>}<span className="sealed-pdf-status" role="status">{busy ? t('Preparando el PDF…') : ''}</span>{error && <span role="alert">{error}</span>}</span>;
+  return <span className="sealed-pdf-action" aria-busy={busy}><label htmlFor={policyId}>{getLocale() === 'en' ? 'PDF presentation' : 'Presentación PDF'}</label><select id={policyId} disabled={busy} value={policy} onChange={e => setPolicy(e.target.value as PdfPolicy)}><option value="strict">{getLocale() === 'en' ? 'Current font catalog' : 'Catálogo de fuentes actual'}</option><option value="historical">{getLocale() === 'en' ? 'Historical PDF · approximate presentation' : 'PDF histórico · presentación aproximada'}</option></select>{policy === 'historical' && <small>{getLocale() === 'en' ? 'Downloading explicitly accepts replacement of recognized legacy fonts. The PDF lists replacements; original appearance is not accredited. Unsupported structures or glyphs stop export.' : 'Al descargar aceptas expresamente sustituir fuentes legadas reconocidas. El PDF enumera los cambios; no acredita la apariencia original. Estructuras o glifos no compatibles impiden exportar.'}</small>}<button className="sealed-pdf-download" aria-label={versionNumber === undefined ? undefined : `${t('Descargar PDF')} · ${t('Versión')} ${versionNumber}`} type="button" onMouseDown={event => event.preventDefault()} disabled={busy} onClick={() => void download()}>{t(busy ? 'Preparando el PDF…' : 'Descargar PDF')}</button><small>{getLocale() === "en" ? "Reconstructed presentation; historical appearance not accredited. The catalog rejects legacy fonts." : "Presentación reconstruida; apariencia histórica no acreditada. El catálogo rechaza fuentes heredadas."}</small>{busy && <button type="button" onClick={() => { ++attempt.current; transport.current?.abort(); cancel.current?.(); if (objectUrl.current) { URL.revokeObjectURL(objectUrl.current); objectUrl.current = null; } setBusy(false); setError(''); }}>{getLocale() === 'en' ? 'Cancel PDF' : 'Cancelar PDF'}</button>}<span className="sealed-pdf-status" role="status">{busy ? t('Preparando el PDF…') : ''}</span>{error && <span role="alert">{error}</span>}</span>;
 }
 
 export function SealedPdfChoice({ documentId, versions }: { documentId: string; versions: DocumentVersion[] }) {

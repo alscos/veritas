@@ -1,6 +1,7 @@
+import Modal from './Modal';
 import MobileEvidence, { EvidenceAccess, type EvidenceTab } from './MobileEvidence';
-import SummaryShareChoice from './SummaryShareChoice';
-import { SealedPdfChoice } from './SealedPdfButton';
+import { nominalRoute } from './nominalTransport';
+import VersionShareApp from './VersionShareApp';
 import { t, getLocale, useLocale } from "./i18n";
 import LanguageSwitcher from "./LanguageSwitcher";
 import EntryStory from "./EntryStory";
@@ -181,7 +182,8 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired" | "conflict">(recovery ? "error" : "saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
-  const [showSend, setShowSend] = useState(false);
+  const [emission, setEmission] = useState<DocumentVersion | null>(null);
+  const [selectedSealed, setSelectedSealed] = useState('');
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineIndex, setTimelineIndex] = useState(Math.max(0, initialEvents.length - 1));
@@ -349,6 +351,7 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
     setEvidenceTab(null); setTimelineIndex(Math.max(0, allEvents.length - 1)); setTimelineOpen(true);
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
+  const [shareOffer, setShareOffer] = useState<DocumentVersion | null>(null);
   const seal = async () => {
     if (!await save()) return;
     try {
@@ -362,7 +365,7 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
         created = result.certificate; version = { ...result.version, certificate: result.certificate };
       }
       if (demo) version.page_settings = pageRef.current;
-      setCertificate(created); setShowSeal(false);
+      setCertificate(created); setSelectedSealed(version.id); setShowSeal(false); if (!demo) setShareOffer(version);
       const next = { ...documentState, versions: [...(documentState.versions ?? []), version], versions_count: (documentState.versions_count ?? 0) + 1 }; setDocumentState(next); onPersist(next);
     } catch { setSaveState("error"); }
   };
@@ -397,11 +400,14 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>{t("Abrir la moviola")}</strong><br />{t("Reconstruye el documento evento a evento.")}</p></button>
     </>} versions={<>
       {!certificate && <p className="evidence-empty">{t("Todavía no hay versiones selladas.")}</p>}
-      {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>{t("Última versión certificada")}</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => { setEvidenceTab(null); setShowSend(true); }}>{t("Entregar")}</button>{!demo && <SealedPdfChoice documentId={documentState.id} versions={documentState.versions ?? []} />}</div>}
-      {!demo && <SummaryShareChoice key={documentState.id} documentId={documentState.id} versions={documentState.versions ?? []} />}
+      {certificate && <div className="certificate-card"><span className="seal">V</span><p className="certificate-heading"><strong>{t('Versiones selladas')}</strong></p>
+        {!demo && <><p className="certificate-identity"><code tabIndex={0} title={(documentState.versions?.find(v => v.id === selectedSealed)?.certificate ?? certificate).certificate_code}>{(documentState.versions?.find(v => v.id === selectedSealed)?.certificate ?? certificate).certificate_code}</code></p><label>{t('Versión')}<select value={selectedSealed || documentState.versions?.at(-1)?.id || ''} onChange={e => setSelectedSealed(e.target.value)}>{(documentState.versions ?? []).filter(v => v.certificate).map(v => <option key={v.id} value={v.id}>{t('Versión')} {v.version_number} · {v.certificate?.certificate_code}</option>)}</select></label>
+        <button onClick={async () => { const v = documentState.versions?.find(v => v.id === selectedSealed) ?? documentState.versions?.at(-1); if (v && await save()) { setEvidenceTab(null); setEmission(v); } }}>{t('Emitir / compartir')}</button><p>{t('Versión sellada exacta')}</p><a href="/deliveries/sent" onClick={async e => { e.preventDefault(); if (await save()) location.assign('/deliveries/sent'); }}>{t('Enviadas')}</a></>}
+      </div>}
     </>} />
+    {shareOffer && <SealedShareOffer documentId={documentState.id} version={shareOffer} onDismiss={() => setShareOffer(null)} onShare={() => { setEmission(shareOffer); setShareOffer(null); }} />}
     {showSeal && <Modal title={t("Sellar esta versión")} onClose={() => setShowSeal(false)}><p>{t("Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.")}</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>{t("palabras")}</span><strong>{historyState === "ready" ? allEvents.length : t("Cargando…")}</strong><span>{t("eventos")}</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>{t("Cancelar")}</button><button className="primary" onClick={() => void seal()}>{t("Certificar versión")}</button></div></Modal>}
-    {showSend && certificate && <SendModal certificate={certificate} demo={demo} documentState={documentState} onClose={() => setShowSend(false)} />}
+    {emission && <Modal title={t('Emitir / compartir')} onClose={() => setEmission(null)}><VersionShareApp key={emission.id} documentId={documentState.id} versionId={emission.id} versionLabel={`${emission.version_number} · ${emission.certificate?.certificate_code ?? ''}`} initialSecret="" wizard /></Modal>}
   </main></>;
 }
 
@@ -462,18 +468,21 @@ export function SendModal({ certificate, documentState, demo, onClose }: { certi
   return <Modal title={sent ? t("Versión entregada") : t("Entregar versión certificada")} onClose={onClose}>{sent ? <div className="success-message"><span>✓</span><p><strong>{t("La entrega ha quedado registrada.")}</strong><br />{t("El destinatario podrá consultar la instantánea sellada de esta versión. Tus borradores posteriores permanecen privados.")}</p><button className="primary" onClick={onClose}>{t("Cerrar")}</button></div> : <form onSubmit={submit} className="send-form"><p>{t("Se entregará la versión identificada como")} <code>{certificate.certificate_code}</code>.</p><p>{t("El destinatario debe tener una cuenta en InkGroove. Introduce el correo de esa cuenta. No se envían avisos por correo.")}</p><label>{t("Correo del profesor o destinatario")}<input name="email" type="email" required disabled={sending} placeholder={t("profesor@centro.es")} /></label><label>{t("Nota opcional")}<textarea name="note" rows={3} disabled={sending} placeholder={t("Una indicación breve para acompañar la entrega")} /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>{t("Cancelar")}</button><button className="primary" disabled={sending}>{t(sending ? "Un momento…" : "Entregar esta versión")}</button></div></form>}</Modal>;
 }
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label={t("Cerrar")}>×</button><h2 id="modal-title">{title}</h2>{children}</section></div>;
+export function SealedShareOffer({ documentId, version, onDismiss, onShare }: { documentId: string; version: DocumentVersion; onDismiss: () => void; onShare?: () => void }) {
+  return <Modal title={t("Versión sellada")} onClose={onDismiss}><p>{t("Versión")} {version.version_number}</p><div className="modal-actions"><button className="primary" data-modal-autofocus onClick={onShare ?? (() => location.assign(`/process-summary/share/manage/${encodeURIComponent(documentId)}/${encodeURIComponent(version.id)}`))}>{t("Compartir esta versión")}</button><button className="secondary" onClick={onDismiss}>{t("Ahora no")}</button></div></Modal>;
 }
+
+
 
 
 
 export default function App() {
   useLocale();
+  useLayoutEffect(() => { if (nominalRoute(location.pathname) && (location.search || location.hash)) history.replaceState(null, '', location.pathname); }, []);
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [authNotice, setAuthNotice] = useState("");
-  const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
+  const [view, setView] = useState<View>(nominalRoute(location.pathname) ? "submissions" : "documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
   const [folders, setFolders] = useState<DocumentFolder[]>([]);
   const opening = useRef(0);
   const loadArchive = async () => { const [texts, groups] = await Promise.all([api<{ documents: VeritasDocument[] }>("/documents"), api<{ folders: DocumentFolder[] }>("/folders")]); setDocuments(texts.documents); setFolders(groups.folders); };
@@ -486,7 +495,7 @@ export default function App() {
   useEffect(() => {
     const expire = (event: Event) => {
       const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
-      opening.current++; resetIdentity(); setEventsByDocument({}); setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
+      opening.current++; resetIdentity(); setEventsByDocument({}); setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView(nominalRoute(location.pathname) ? "submissions" : "documents");
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
@@ -525,9 +534,9 @@ export default function App() {
   };
   if (booting || signingOut) return <main className="loading"><Logo /><span></span><p>{t("Abriendo tu archivo…")}</p></main>;
   if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); resetIdentity(next.id); announceIdentity(); setActive(null); setEventsByDocument({}); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
-  return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
+  return <Shell user={user} view={view} setView={next => { history.replaceState(null, '', next === 'submissions' ? '/deliveries/received' : '/'); setView(next); window.dispatchEvent(new PopStateEvent('popstate')); }} demo={demo} onLogout={() => void logout()}>
     {view === "documents" && <DocumentsWorkspace documents={documents} folders={folders} onOpen={open} onCreate={create} onDelete={remove} onMove={move} onFolderSave={saveFolder} onFolderDelete={removeFolder} />}
     {view === "editor" && active && <EditorView key={`${user.id}:${active.id}`} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} folders={folders} onBack={returnToDocuments} onPersist={persist} />}
-    {view === "submissions" && <SubmissionsView />}
+    {view === "submissions" && <SubmissionsView key={user.id} />}
   </Shell>;
 }

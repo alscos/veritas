@@ -8,6 +8,7 @@ self.onunhandledrejection = event => { event.preventDefault(); self.postMessage(
 self.onmessage = async (event: MessageEvent<TDocumentDefinitions>) => {
   const definition = event.data;
   definition.footer = (page, total) => ({ text: `InkGroove · ${page} / ${total}`, alignment: 'center', fontSize: 8, margin: [0, 10, 0, 0] });
+  definition.pageBreakBefore = (node, following) => node.headlineLevel === 1 && following.length === 0;
   try {
     const { fonts, vfs } = await loadPdfContentFonts(definition);
     pdfMake.createPdf(definition, PDF_LAYOUTS, fonts, vfs).getBuffer(buffer => {
