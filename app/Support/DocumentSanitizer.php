@@ -51,11 +51,11 @@ final class DocumentSanitizer
             foreach (iterator_to_array($child->attributes) as $attribute) {
                 $allowedOrigin = $tag === 'MARK' && $attribute->name === 'data-origin' && in_array($attribute->value, ['paste', 'paste-edited'], true);
                 $allowedProvenance = $tag === 'SPAN' && $attribute->name === 'data-provenance' && in_array($attribute->value, ['typed', 'paste-edited'], true);
-                $allowedFont = $tag === 'SPAN' && $attribute->name === 'data-font' && in_array($attribute->value, self::FONTS, true);
+                $allowedFont = $tag === 'SPAN' && $attribute->name === 'data-font' && (in_array($attribute->value, self::FONTS, true) || isset(ContentFonts::CSS[$attribute->value]));
                 $allowedSize = $tag === 'SPAN' && $attribute->name === 'data-size' && in_array($attribute->value, self::SIZES, true);
                 $allowedColor = $tag === 'SPAN' && $attribute->name === 'data-color' && preg_match('/^#[a-f0-9]{6}$/D', $attribute->value);
                 $block = in_array($tag, ['P', 'H1', 'H2', 'H3', 'TD', 'TH'], true);
-                $allowedLayout = $block && (($attribute->name === 'data-indent' && preg_match('/^[0-6]$/D', $attribute->value)) || ($attribute->name === 'data-line-height' && in_array($attribute->value, ['1', '1.15', '1.5', '2'], true)));
+                $allowedLayout = $block && (($attribute->name === 'data-content-font' && in_array($tag, ['P', 'H1', 'H2', 'H3'], true) && $attribute->value === 'literata') || ($attribute->name === 'data-indent' && preg_match('/^[0-6]$/D', $attribute->value)) || ($attribute->name === 'data-line-height' && in_array($attribute->value, ['1', '1.15', '1.5', '2'], true)));
                 $allowedLink = $tag === 'A' && (($attribute->name === 'href' && self::safeLink($attribute->value)) || ($attribute->name === 'title' && mb_strlen($attribute->value) <= 200));
                 $allowedImage = $tag === 'IMG' && (($attribute->name === 'src' && preg_match(self::IMAGE_URL, $attribute->value)) || ($attribute->name === 'alt' && mb_strlen($attribute->value) <= 300) || ($attribute->name === 'width' && ctype_digit($attribute->value) && (int) $attribute->value >= 40 && (int) $attribute->value <= 1600) || ($attribute->name === 'height' && ctype_digit($attribute->value) && (int) $attribute->value >= 1 && (int) $attribute->value <= 12000) || ($attribute->name === 'data-image-sha256' && preg_match('/^[a-f0-9]{64}$/D', $attribute->value)));
                 $allowedTable = in_array($tag, ['TD', 'TH'], true) && ((in_array($attribute->name, ['colspan', 'rowspan'], true) && ctype_digit($attribute->value) && (int) $attribute->value >= 1 && (int) $attribute->value <= 20) || ($attribute->name === 'colwidth' && preg_match('/^\d{1,4}(,\d{1,4}){0,19}$/D', $attribute->value)));
@@ -80,7 +80,7 @@ final class DocumentSanitizer
                     'garamond' => 'Garamond, "EB Garamond", Georgia, serif',
                     'selectric' => '"InkGroove Type Clean", Georgia, serif',
                     'verdana' => 'Verdana, sans-serif',
-                    default => null,
+                    default => ContentFonts::CSS[$child->getAttribute('data-font')] ?? null,
                 };
                 if ($font) $styles[] = 'font-family: '.$font;
                 $size = $child->getAttribute('data-size');

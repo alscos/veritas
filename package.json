@@ -23,10 +23,12 @@
     "@tiptap/starter-kit": "3.31.4",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",
+    "pdfmake": "0.2.20",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@types/pdfmake": "0.2.12",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",

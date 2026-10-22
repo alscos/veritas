@@ -45,16 +45,16 @@ class EditorWorkspaceTest extends TestCase
     {
         $this->actingAs($this->user());
         $document = $this->postJson('/api/documents', ['title' => 'Vacío'])->assertCreated()->json('document');
-        $this->assertSame('', $document['content_html']);
+        $this->assertSame('<p data-content-font="literata"></p>', $document['content_html']);
         $this->assertSame('', $document['content_text']);
         $this->assertSame(0, $document['word_count']);
         $this->assertSame('draft', $document['status']);
         $this->getJson('/api/documents/'.$document['id'])->assertOk()
-            ->assertJsonPath('document.content_html', '')
+            ->assertJsonPath('document.content_html', '<p data-content-font="literata"></p>')
             ->assertJsonPath('document.content_text', '')
             ->assertJsonPath('document.word_count', 0);
         $this->assertDatabaseHas('documents', [
-            'id' => $document['id'], 'content_html' => '', 'content_text' => '', 'word_count' => 0,
+            'id' => $document['id'], 'content_html' => '<p data-content-font="literata"></p>', 'content_text' => '', 'word_count' => 0,
         ]);
     }
     public function test_folder_ownership_and_deleting_a_folder_preserves_documents(): void

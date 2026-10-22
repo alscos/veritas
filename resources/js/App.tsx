@@ -1,11 +1,16 @@
+import Modal from './Modal';
+import MobileEvidence, { EvidenceAccess, type EvidenceTab } from './MobileEvidence';
+import { nominalRoute } from './nominalTransport';
+import VersionShareApp from './VersionShareApp';
 import { t, getLocale, useLocale } from "./i18n";
 import LanguageSwitcher from "./LanguageSwitcher";
 import EntryStory from "./EntryStory";
 import { FormEvent, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, SESSION_EXPIRED_EVENT, authenticatedIdentity, resetIdentity } from "./api";
+import { api, ApiError, SESSION_EXPIRED_EVENT, authenticatedIdentity, resetIdentity, identityGeneration } from "./api";
 import type { Certificate, DocumentFolder, DocumentVersion, PageSettings, Submission, User, VeritasDocument, WritingEvent } from "./types";
 import type { EditorMutation, VeritasEditorHandle } from "./VeritasEditor";
 import DocumentsWorkspace from "./DocumentsWorkspace";
+import SubmissionsView from "./SubmissionsView";
 import { DEFAULT_PAGE } from "./pageLayout";
 import brandLogo from "../brand/InkGroove-logo-tinta-naranja.svg";
 import brandLogoLight from "../brand/InkGroove-logo-tinta-claro.svg";
@@ -177,7 +182,9 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error" | "expired" | "conflict">(recovery ? "error" : "saved");
   const [showSeal, setShowSeal] = useState(false);
   const [certificate, setCertificate] = useState<Certificate | null>(initial.versions?.at(-1)?.certificate ?? null);
-  const [showSend, setShowSend] = useState(false);
+  const [emission, setEmission] = useState<DocumentVersion | null>(null);
+  const [selectedSealed, setSelectedSealed] = useState('');
+  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineIndex, setTimelineIndex] = useState(Math.max(0, initialEvents.length - 1));
   const [firstTypingAt, setFirstTypingAt] = useState<number | null>(null);
@@ -341,9 +348,10 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
   const openTimeline = async () => {
     const ready = lastSavedRevision.current < changeRevision.current ? await save() : await syncEvents();
     if (!ready) return;
-    setTimelineIndex(Math.max(0, allEvents.length - 1)); setTimelineOpen(true);
+    setEvidenceTab(null); setTimelineIndex(Math.max(0, allEvents.length - 1)); setTimelineOpen(true);
   };
   const leaveEditor = async () => { if (await save()) onBack(); };
+  const [shareOffer, setShareOffer] = useState<DocumentVersion | null>(null);
   const seal = async () => {
     if (!await save()) return;
     try {
@@ -357,12 +365,13 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
         created = result.certificate; version = { ...result.version, certificate: result.certificate };
       }
       if (demo) version.page_settings = pageRef.current;
-      setCertificate(created); setShowSeal(false);
+      setCertificate(created); setSelectedSealed(version.id); setShowSeal(false); if (!demo) setShareOffer(version);
       const next = { ...documentState, versions: [...(documentState.versions ?? []), version], versions_count: (documentState.versions_count ?? 0) + 1 }; setDocumentState(next); onPersist(next);
     } catch { setSaveState("error"); }
   };
-  if (timelineOpen) return <Timeline events={allEvents} documentId={demo ? undefined : initial.id} loading={historyState === "loading"} historyError={historyState === "error"} onRetryHistory={() => setHistoryAttempt(value => value + 1)} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />;
-  return <main className="editor-layout">
+  return <>
+    {timelineOpen && <Timeline events={allEvents} documentId={demo ? undefined : initial.id} loading={historyState === "loading"} historyError={historyState === "error"} onRetryHistory={() => setHistoryAttempt(value => value + 1)} title={title} onClose={() => setTimelineOpen(false)} index={timelineIndex} setIndex={setTimelineIndex} />}
+    <main className="editor-layout" style={timelineOpen ? { display: "none" } : undefined}>
     <aside className="document-context">
       <button className="back-link" onClick={() => void leaveEditor()}>{t("← Mis documentos")}</button>
       <p className="eyebrow">{t("Documento propio")}</p>
@@ -372,27 +381,34 @@ function EditorWorkspace({ initial, recovery, initialEvents, demo, folders, onBa
     </aside>
     <section className="writing-surface">
       <div className="editor-header"><div><input className="title-input" value={title} onChange={event => { const nextTitle = event.target.value; setTitle(nextTitle); markChanged(); if (sessionExpired.current) persistLocalRecovery(editorRef.current?.getHTML() ?? html, nextTitle); }} aria-label={t("Título")}/><span>{t("Sesión activa · registro local y servidor")}</span></div>{saveState === "expired" ? <button className="save-state expired" onClick={() => window.location.reload()}>{t("Sesión caducada · volver a entrar")}</button> : <span className={`save-state ${saveState}`}>{saveState === "saved" ? t("Todo guardado") : saveState === "saving" ? t("Guardando…") : saveState === "conflict" ? (localStored ? t("Conflicto · copia local conservada") : t("Conflicto · sin copia local confirmada")) : (localStored ? t("Error al guardar · copia local conservada") : t("Error al guardar · sin copia local confirmada"))}</span>}</div>
+      <EvidenceAccess open={setEvidenceTab} />
       <div className="paper">
         <Suspense fallback={<div className="editor-loading">{t("Preparando el documento…")}</div>}>
-          <VeritasEditor ref={editorRef} initialHtml={html} title={title} page={page} onPageChange={changePage} beforeExport={save} onUploadImage={uploadImage} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
+          <VeritasEditor key={`${initial.owner_id}:${initial.id}`} defaultContentFontId={initial.default_content_font_id ?? null} ref={editorRef} initialHtml={html} title={title} page={page} onPageChange={changePage} beforeExport={save} onUploadImage={uploadImage} onMutation={editorMutation} onFocus={() => record("focus", null)} onBlur={() => record("blur", null)} />
         </Suspense>
       </div>
       <p>{localStored ? t("Copia local disponible en este navegador") : t("Sin copia local confirmada")}</p>
       {(saveState === "conflict" || saveState === "error" || conflicted.current) && <div role="alert"><p>{t("Tu borrador permanece aquí. No se mezclará ni sobrescribirá el servidor automáticamente.")}</p><button onClick={() => { persistLocalRecovery(); const blob = new Blob([JSON.stringify({ format: 2, ownerId: initial.owner_id, documentId: initial.id, savedAt: Date.now(), html: editorRef.current?.getHTML() ?? html, title, page: pageRef.current, folderId: folderRef.current, sessionId: sessionId.current, startedAt: started.current, sequence: sequence.current, pending: pending.current, baseRevision: remoteRevision.current }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "inkgroove-draft.json"; a.click(); URL.revokeObjectURL(url); }}>{t("Conservar borrador en un archivo")}</button><button onClick={() => { if (persistLocalRecovery()) onBack(); }}>{t("Volver a mis documentos conservando la copia local")}</button><button onClick={() => { void api<{ document: VeritasDocument }>(`/documents/${initial.id}`).then(result => setRemotePreview(result.document)).catch(() => setSaveState("error")); }}>{t("Consultar estado del servidor")}</button>{remotePreview && <div><p>{t("Revisión del servidor")}: {remotePreview.revision} · {remotePreview.title}</p><pre>{remotePreview.content_text}</pre></div>}</div>}
       <div className="editor-actions"><span>{currentWordCount} {t("palabras")}</span><div><button className="secondary" onClick={() => void save()}>{t("Guardar ahora")}</button><button className="secondary" onClick={() => void openTimeline()}>{t("Ver proceso")}</button><button className="primary" disabled={!currentWordCount} onClick={() => setShowSeal(true)}>{t("Sellar versión")}</button></div></div>
     </section>
-    <aside className="evidence-panel">
+    <MobileEvidence tab={evidenceTab} setTab={setEvidenceTab} activity={<>
       <div className="live-title"><span><i></i>{t("Registro en directo")}</span><small>{historyState === "ready" ? allEvents.length : `${history.length}/${historyTotal}`} {t("eventos")}</small></div>
       {historyState === "loading" && <p role="status">{t("Cargando historial…")}</p>}
       {historyState === "error" && <p role="alert">{t("No se pudo cargar el historial.")} <button onClick={() => setHistoryAttempt(value => value + 1)}>{t("Reintentar")}</button></p>}
       <div className="metric-hero"><span>{sessionPpm !== null ? t("Ritmo de esta sesión") : previousPpm !== null ? t("Último ritmo registrado") : t("Ritmo de esta sesión")}</span><strong>{displayedPpm ?? (historyState !== "ready" ? t("Cargando…") : "—")}<em> {t("ppm")}</em></strong><div className="bars">{[6,10,8,14,11,16,13,18,15].map((height, i) => <i key={i} style={{height}} />)}</div></div>
       <ul className="evidence-list"><li><span className="metric-icon typed">T</span><p>{t("Escritura directa")}<strong>{analysis.direct} {t("palabras")}</strong></p></li><li><span className="metric-icon pasted">□</span><p>{t("Pegado sin modificar")}<strong>{pasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon revised">↺</span><p>{t("Pegado reelaborado")}<strong>{editedPasteWords} {t("palabras")}</strong></p></li><li><span className="metric-icon history">◷</span><p>{t("Tiempo total registrado")}<strong>{historyState === "ready" ? duration(timing.totalMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon typed">⌨</span><p>{t("Escritura activa estimada")}<strong>{historyState === "ready" ? duration(timing.writingMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon revised">✎</span><p>{t("Edición activa estimada")}<strong>{historyState === "ready" ? duration(timing.revisionMs) : t("Cargando…")}</strong></p></li><li><span className="metric-icon pause">Ⅱ</span><p>{t("Pausas de al menos 5 s")}<strong>{historyState === "ready" ? `${timing.pauseCount} · ${duration(timing.pauseMs)}` : t("Cargando…")}</strong></p></li><li><span className="metric-icon away">↗</span><p>{t("Fuera del editor")}<strong>{historyState === "ready" ? duration(timing.awayMs) : t("Cargando…")}</strong></p></li></ul>
       <button className="process-card" onClick={() => void openTimeline()}><span>▶</span><p><strong>{t("Abrir la moviola")}</strong><br />{t("Reconstruye el documento evento a evento.")}</p></button>
-      {certificate && <div className="certificate-card"><span className="seal">V</span><p><strong>{t("Última versión certificada")}</strong><br /><code>{certificate.certificate_code}</code></p><button onClick={() => setShowSend(true)}>{t("Entregar")}</button></div>}
-    </aside>
+    </>} versions={<>
+      {!certificate && <p className="evidence-empty">{t("Todavía no hay versiones selladas.")}</p>}
+      {certificate && <div className="certificate-card"><span className="seal">V</span><p className="certificate-heading"><strong>{t('Versiones selladas')}</strong></p>
+        {!demo && <><p className="certificate-identity"><code tabIndex={0} title={(documentState.versions?.find(v => v.id === selectedSealed)?.certificate ?? certificate).certificate_code}>{(documentState.versions?.find(v => v.id === selectedSealed)?.certificate ?? certificate).certificate_code}</code></p><label>{t('Versión')}<select value={selectedSealed || documentState.versions?.at(-1)?.id || ''} onChange={e => setSelectedSealed(e.target.value)}>{(documentState.versions ?? []).filter(v => v.certificate).map(v => <option key={v.id} value={v.id}>{t('Versión')} {v.version_number} · {v.certificate?.certificate_code}</option>)}</select></label>
+        <button onClick={async () => { const v = documentState.versions?.find(v => v.id === selectedSealed) ?? documentState.versions?.at(-1); if (v && await save()) { setEvidenceTab(null); setEmission(v); } }}>{t('Emitir / compartir')}</button><p>{t('Versión sellada exacta')}</p><a href="/deliveries/sent" onClick={async e => { e.preventDefault(); if (await save()) location.assign('/deliveries/sent'); }}>{t('Enviadas')}</a></>}
+      </div>}
+    </>} />
+    {shareOffer && <SealedShareOffer documentId={documentState.id} version={shareOffer} onDismiss={() => setShareOffer(null)} onShare={() => { setEmission(shareOffer); setShareOffer(null); }} />}
     {showSeal && <Modal title={t("Sellar esta versión")} onClose={() => setShowSeal(false)}><p>{t("Se creará una copia inmutable del texto y de la cadena de eventos recibida por InkGroove. Podrás seguir trabajando y sellar versiones posteriores.")}</p><div className="seal-summary"><strong>{currentWordCount}</strong><span>{t("palabras")}</span><strong>{historyState === "ready" ? allEvents.length : t("Cargando…")}</strong><span>{t("eventos")}</span></div><div className="modal-actions"><button className="secondary" onClick={() => setShowSeal(false)}>{t("Cancelar")}</button><button className="primary" onClick={() => void seal()}>{t("Certificar versión")}</button></div></Modal>}
-    {showSend && certificate && <SendModal certificate={certificate} demo={demo} documentState={documentState} onClose={() => setShowSend(false)} />}
-  </main>;
+    {emission && <Modal title={t('Emitir / compartir')} onClose={() => setEmission(null)}><VersionShareApp key={emission.id} documentId={documentState.id} versionId={emission.id} versionLabel={`${emission.version_number} · ${emission.certificate?.certificate_code ?? ''}`} initialSecret="" wizard /></Modal>}
+  </main></>;
 }
 
 export function Timeline({ events, documentId, loading, historyError, onRetryHistory, title, onClose, index, setIndex }: { documentId?: string; loading: boolean; historyError: boolean; onRetryHistory: () => void; events: WritingEvent[]; title: string; onClose: () => void; index: number; setIndex: (index: number) => void }) {
@@ -430,72 +446,45 @@ export function Timeline({ events, documentId, loading, historyError, onRetryHis
   </section>;
 }
 
-function SendModal({ certificate, documentState, demo, onClose }: { certificate: Certificate; documentState: VeritasDocument; demo: boolean; onClose: () => void }) {
-  const [sent, setSent] = useState(false); const [error, setError] = useState("");
-  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { if (!demo) { const version = documentState.versions?.at(-1); if (!version) throw new Error(t("Falta la versión sellada")); await api('/submissions', { method: 'POST', body: JSON.stringify({ document_version_id: version.id, recipient_email: form.get('email'), note: form.get('note') }) }); } setSent(true); } catch (reason) { setError(reason instanceof Error ? reason.message : t("No se pudo realizar la entrega.")); } };
-  return <Modal title={sent ? t("Versión entregada") : t("Entregar versión certificada")} onClose={onClose}>{sent ? <div className="success-message"><span>✓</span><p><strong>{t("La entrega ha quedado registrada.")}</strong><br />{t("El destinatario verá esta versión concreta y su proceso, pero no tus borradores posteriores.")}</p><button className="primary" onClick={onClose}>{t("Cerrar")}</button></div> : <form onSubmit={submit} className="send-form"><p>{t("Se entregará la versión identificada como")} <code>{certificate.certificate_code}</code>.</p><label>{t("Correo del profesor o destinatario")}<input name="email" type="email" required placeholder={t("profesor@centro.es")} /></label><label>{t("Nota opcional")}<textarea name="note" rows={3} placeholder={t("Una indicación breve para acompañar la entrega")} /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>{t("Cancelar")}</button><button className="primary">{t("Entregar esta versión")}</button></div></form>}</Modal>;
-}
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label={t("Cerrar")}>×</button><h2 id="modal-title">{title}</h2>{children}</section></div>;
-}
-
-function SubmissionsView() {
-  const [items, setItems] = useState<Submission[]>([]);
-  const [version, setVersion] = useState<DocumentVersion | null>(null);
-  const [notice, setNotice] = useState("");
-  const [history, setHistory] = useState<WritingEvent[]>([]);
-  const [scopeId, setScopeId] = useState("");
-  const [snapshot, setSnapshot] = useState("");
-  const [selected, setSelected] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const readAttempt = useRef(0);
+export function SendModal({ certificate, documentState, demo, onClose }: { certificate: Certificate; documentState: VeritasDocument; demo: boolean; onClose: () => void }) {
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { void api<{ received: Submission[]; sent: Submission[] }>("/submissions").then(data => setItems([...data.received, ...data.sent])).catch(() => undefined); }, []);
-  const open = async (id: string) => {
-    const attempt = ++readAttempt.current;
-    setVersion(null); setHistory([]); setSnapshot(""); setNotice(""); setError(""); setLoading(true);
+  const [sending, setSending] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (sending) return;
+    const form = new FormData(event.currentTarget);
+    setError(""); setSending(true);
     try {
-      const data = await api<{ version: DocumentVersion & { document_id: string }; history_available: boolean; history_notice: string | null }>(`/submissions/${id}`);
-      if (attempt !== readAttempt.current) return;
-      const scope = data.version;
-      setScopeId(scope.document_id);
-      // Private image URLs need the same explicit version authorization.
-      setVersion({ ...scope, snapshot_html: scope.snapshot_html.replace(/(\/api\/documents\/[^"\s<>]+\/images\/[^"\s<>]+)/g, `$1?version_id=${scope.id}`) });
-      setNotice(data.history_available ? "" : "Esta versión antigua no tiene una frontera de proceso verificable. Solo se comparte la instantánea sellada.");
-      if (data.history_available) {
-        let page: HistoryPage; let query = `version_id=${scope.id}&metadata=1`; const events: WritingEvent[] = [];
-        do {
-          page = await api<HistoryPage>(`/documents/${scope.document_id}/timeline?${query}`);
-          if (attempt !== readAttempt.current) return;
-          events.push(...page.events);
-          query = `version_id=${scope.id}&metadata=1&before_id=${page.before_id}&cursor=${encodeURIComponent(page.next_cursor ?? "")}`;
-        } while (page.next_cursor);
-        setHistory(events); setSelected(0);
-      }
-    } catch (reason) { if (attempt === readAttempt.current) setError(reason instanceof Error ? reason.message : ""); }
-    finally { if (attempt === readAttempt.current) setLoading(false); }
+      if (demo) throw new Error(t("Las entregas requieren una cuenta y no están disponibles en la demostración."));
+      const version = documentState.versions?.find(item => item.certificate?.id === certificate.id);
+      if (!version) throw new Error(t("Falta la versión sellada"));
+      const result = await api<{ submission: Submission }>('/submissions', { method: 'POST', body: JSON.stringify({ document_version_id: version.id, recipient_email: form.get('email'), note: form.get('note') }) });
+      if (!result.submission?.id || !result.submission.recipient_user_id || result.submission.document_version_id !== version.id) throw new Error(t("No se pudo confirmar la entrega."));
+      setSent(true);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("No se pudo realizar la entrega.")); }
+    finally { setSending(false); }
   };
-  const readEvent = async (index: number) => {
-    if (!version || !history[index]?.id) return;
-    const attempt = ++readAttempt.current;
-    setSelected(index); setSnapshot(""); setError("");
-    try {
-      const data = await api<{ events: WritingEvent[] }>(`/documents/${scopeId}/timeline?version_id=${version.id}&event_id=${history[index].id}`);
-      if (attempt === readAttempt.current) setSnapshot((data.events[0].after_html ?? "").replace(/(\/api\/documents\/[^"\s<>]+\/images\/[^"\s<>]+)/g, `$1?version_id=${version.id}`));
-    } catch (reason) { if (attempt === readAttempt.current) setError(reason instanceof Error ? reason.message : ""); }
-  };
-  const window = historyWindow(selected, history.length);
-  return <main className="workspace dashboard"><h1>{t("Entregas")}</h1>{items.map(item => <button key={item.id} data-submission-id={item.id} onClick={() => void open(item.id)}>{item.submitted_at}</button>)}{error && <p role="alert">{error}</p>}{version && <><h2>{t("Versión")} {version.version_number}</h2><div dangerouslySetInnerHTML={{ __html: version.snapshot_html }} /><p>{t(notice)}</p>{!notice && <p>{loading ? t("Cargando historial…") : `${history.length} ${t("eventos")}`}</p>}{history.length > 0 && <p>{t("El proceso incluye borradores recibidos, que pueden diferir del texto guardado o sellado.")}</p>}{history.length > 0 && <input aria-label={t("Evento")} type="range" min={0} max={history.length - 1} value={selected} onChange={event => void readEvent(Number(event.target.value))} />}<ol>{history.slice(window.start, window.end).map((event, index) => <li key={event.id ?? eventKey(event)}><button onClick={() => void readEvent(window.start + index)}>{event.server_received_at} · {event.event_type} · {event.elapsed_ms} ms</button></li>)}</ol>{snapshot && <article dangerouslySetInnerHTML={{ __html: snapshot }} />}</>}</main>;
+  return <Modal title={sent ? t("Versión entregada") : t("Entregar versión certificada")} onClose={onClose}>{sent ? <div className="success-message"><span>✓</span><p><strong>{t("La entrega ha quedado registrada.")}</strong><br />{t("El destinatario podrá consultar la instantánea sellada de esta versión. Tus borradores posteriores permanecen privados.")}</p><button className="primary" onClick={onClose}>{t("Cerrar")}</button></div> : <form onSubmit={submit} className="send-form"><p>{t("Se entregará la versión identificada como")} <code>{certificate.certificate_code}</code>.</p><p>{t("El destinatario debe tener una cuenta en InkGroove. Introduce el correo de esa cuenta. No se envían avisos por correo.")}</p><label>{t("Correo del profesor o destinatario")}<input name="email" type="email" required disabled={sending} placeholder={t("profesor@centro.es")} /></label><label>{t("Nota opcional")}<textarea name="note" rows={3} disabled={sending} placeholder={t("Una indicación breve para acompañar la entrega")} /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>{t("Cancelar")}</button><button className="primary" disabled={sending}>{t(sending ? "Un momento…" : "Entregar esta versión")}</button></div></form>}</Modal>;
 }
+
+export function SealedShareOffer({ documentId, version, onDismiss, onShare }: { documentId: string; version: DocumentVersion; onDismiss: () => void; onShare?: () => void }) {
+  return <Modal title={t("Versión sellada")} onClose={onDismiss}><p>{t("Versión")} {version.version_number}</p><div className="modal-actions"><button className="primary" data-modal-autofocus onClick={onShare ?? (() => location.assign(`/process-summary/share/manage/${encodeURIComponent(documentId)}/${encodeURIComponent(version.id)}`))}>{t("Compartir esta versión")}</button><button className="secondary" onClick={onDismiss}>{t("Ahora no")}</button></div></Modal>;
+}
+
+
+
+
 
 export default function App() {
   useLocale();
+  useLayoutEffect(() => { if (nominalRoute(location.pathname) && (location.search || location.hash)) history.replaceState(null, '', location.pathname); }, []);
   const [booting, setBooting] = useState(true); const [user, setUser] = useState<User | null>(window.__VERITAS_USER__ ?? null); const [demo, setDemo] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [authNotice, setAuthNotice] = useState("");
-  const [view, setView] = useState<View>("documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
+  const [view, setView] = useState<View>(nominalRoute(location.pathname) ? "submissions" : "documents"); const [documents, setDocuments] = useState<VeritasDocument[]>([]); const [active, setActive] = useState<VeritasDocument | null>(null); const [eventsByDocument, setEventsByDocument] = useState<Record<string, WritingEvent[]>>({ [demoDocuments[0].id]: demoEvents });
   const [folders, setFolders] = useState<DocumentFolder[]>([]);
+  const opening = useRef(0);
   const loadArchive = async () => { const [texts, groups] = await Promise.all([api<{ documents: VeritasDocument[] }>("/documents"), api<{ folders: DocumentFolder[] }>("/folders")]); setDocuments(texts.documents); setFolders(groups.folders); };
   const announceIdentity = () => { try { localStorage.setItem("veritas:auth-generation", `${Date.now()}:${Math.random()}`); } catch { /* Storage may be disabled. */ } };
   useEffect(() => {
@@ -506,7 +495,7 @@ export default function App() {
   useEffect(() => {
     const expire = (event: Event) => {
       const message = (event as CustomEvent<{ message?: string }>).detail?.message ?? t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
-      resetIdentity(); setEventsByDocument({}); setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView("documents");
+      opening.current++; resetIdentity(); setEventsByDocument({}); setAuthNotice(message); setUser(null); setDocuments([]); setFolders([]); setActive(null); setView(nominalRoute(location.pathname) ? "submissions" : "documents");
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
@@ -528,14 +517,14 @@ export default function App() {
     window.addEventListener("focus", focus);
     return () => { disposed = true; window.clearInterval(timer); window.removeEventListener("focus", focus); };
   }, [user?.id, demo]);
-  const create = async (title: string, folderId: string | null = null) => { let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, folder_id: folderId, title, content_html: "", content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title, folder_id: folderId }) }); created = result.document; } setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
+  const create = async (title: string, folderId: string | null = null) => { const request = ++opening.current, epoch = identityGeneration(); let created: VeritasDocument; if (demo) created = { id: makeId(), owner_id: user!.id, folder_id: folderId, title, default_content_font_id: "literata", content_html: '<p data-content-font="literata"></p>', content_text: "", word_count: 0, status: "draft", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), versions_count: 0, sessions_count: 0, versions: [] }; else { const result = await api<{ document: VeritasDocument }>('/documents', { method: 'POST', body: JSON.stringify({ title, folder_id: folderId }) }); created = result.document; } if (epoch !== identityGeneration() || request !== opening.current || created.owner_id !== user?.id) return; setDocuments(previous => [created, ...previous]); setActive(created); setView("editor"); };
   const remove = async (document: VeritasDocument) => { if (!demo) await api<{ deleted: boolean }>(`/documents/${document.id}`, { method: 'DELETE' }); setDocuments(previous => previous.filter(item => item.id !== document.id)); setEventsByDocument(previous => { const next = { ...previous }; delete next[document.id]; return next; }); if (active?.id === document.id) setActive(null); };
-  const open = async (document: VeritasDocument) => { if (!demo) { const detail = await api<{ document: VeritasDocument }>(`/documents/${document.id}`); document = detail.document; } setActive(document); setView("editor"); };
+  const open = async (document: VeritasDocument) => { const request = ++opening.current, epoch = identityGeneration(), id = document.id; if (!demo) { const detail = await api<{ document: VeritasDocument }>(`/documents/${document.id}`); document = detail.document; } if (epoch !== identityGeneration() || request !== opening.current || document.id !== id || document.owner_id !== user?.id) return; setActive(document); setView("editor"); };
   const persist = (updated: VeritasDocument) => { if (authenticatedIdentity() !== updated.owner_id && !demo) return; setDocuments(previous => previous.map(document => document.id === updated.id ? { ...document, ...updated } : document)); setActive(updated); setEventsByDocument(previous => active ? ({ ...previous, [active.id]: previous[active.id] ?? [] }) : previous); };
   const move = async (document: VeritasDocument, folderId: string | null) => { if (demo) persist({ ...document, folder_id: folderId }); else { const result = await api<{ document: VeritasDocument }>(`/documents/${document.id}`, { method: "PATCH", body: JSON.stringify({ revision: document.revision ?? 0, folder_id: folderId }) }); persist({ ...document, ...result.document }); } };
   const saveFolder = async (name: string, id?: string): Promise<DocumentFolder> => { const folder = demo ? { id: id ?? makeId(), name } : (await api<{ folder: DocumentFolder }>(id ? `/folders/${id}` : "/folders", { method: id ? "PATCH" : "POST", body: JSON.stringify({ name }) })).folder; setFolders(previous => [...previous.filter(item => item.id !== folder.id), folder].sort((a, b) => a.name.localeCompare(b.name, getLocale()))); return folder; };
   const removeFolder = async (folder: DocumentFolder) => { if (!demo) await api(`/folders/${folder.id}`, { method: "DELETE" }); setFolders(previous => previous.filter(item => item.id !== folder.id)); setDocuments(previous => previous.map(document => document.folder_id === folder.id ? { ...document, folder_id: null } : document)); };
-  const returnToDocuments = () => { setView("documents"); if (!demo) void loadArchive().catch(() => undefined); };
+  const returnToDocuments = () => { opening.current++; setView("documents"); if (!demo) void loadArchive().catch(() => undefined); };
   const logout = async () => {
     setSigningOut(true); announceIdentity();
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { message: "" } }));
@@ -545,9 +534,9 @@ export default function App() {
   };
   if (booting || signingOut) return <main className="loading"><Logo /><span></span><p>{t("Abriendo tu archivo…")}</p></main>;
   if (!user) return <AuthScreen notice={authNotice} onAuthenticated={next => { setAuthNotice(""); resetIdentity(next.id); announceIdentity(); setActive(null); setEventsByDocument({}); setUser(next); void loadArchive().catch(() => setDocuments([])); }} />;
-  return <Shell user={user} view={view} setView={setView} demo={demo} onLogout={() => void logout()}>
+  return <Shell user={user} view={view} setView={next => { history.replaceState(null, '', next === 'submissions' ? '/deliveries/received' : '/'); setView(next); window.dispatchEvent(new PopStateEvent('popstate')); }} demo={demo} onLogout={() => void logout()}>
     {view === "documents" && <DocumentsWorkspace documents={documents} folders={folders} onOpen={open} onCreate={create} onDelete={remove} onMove={move} onFolderSave={saveFolder} onFolderDelete={removeFolder} />}
     {view === "editor" && active && <EditorView key={`${user.id}:${active.id}`} initial={active} initialEvents={eventsByDocument[active.id] ?? []} demo={demo} folders={folders} onBack={returnToDocuments} onPersist={persist} />}
-    {view === "submissions" && <SubmissionsView />}
+    {view === "submissions" && <SubmissionsView key={user.id} />}
   </Shell>;
 }

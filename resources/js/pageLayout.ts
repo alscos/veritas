@@ -1,3 +1,4 @@
+import { CONTENT_FONTS } from "./contentFonts";
 import type { PageSettings } from "./types";
 
 export const PAGE_FORMATS = {
@@ -15,6 +16,7 @@ export const pageDimensions = (settings: PageSettings) => {
   return { width, height, widthPx: width * MM_TO_PX, heightPx: height * MM_TO_PX, marginPx: settings.margin * MM_TO_PX };
 };
 export const FONT_FAMILIES: Record<string, { label: string; css: string; export: string }> = {
+  ...CONTENT_FONTS,
   serif: { label: "Serif editorial", css: 'Georgia, "Times New Roman", serif', export: "Georgia" },
   sans: { label: "Sans serif", css: 'Arial, Helvetica, sans-serif', export: "Arial" },
   mono: { label: "Monoespaciada", css: '"Courier New", monospace', export: "Courier New" },

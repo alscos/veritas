@@ -27,10 +27,12 @@ class DocumentController
             'title' => ['nullable', 'string', 'max:180'],
             'folder_id' => ['nullable', 'uuid', Rule::exists('document_folders', 'id')->where('owner_id', $request->user()->id)],
         ]);
-        $document = Document::create([
+        $document = Document::createWithContentFont([
             'owner_id' => $request->user()->id,
             'title' => trim($data['title'] ?? '') ?: __('inkgroove.untitled'),
             'folder_id' => $data['folder_id'] ?? null,
+            // Explicit only at creation; never infer this from an empty legacy draft.
+            'content_html' => '<p data-content-font="literata"></p>',
         ]);
         // Reload database defaults such as content_html before serializing the
         // new document. Otherwise an empty document reaches the client without
@@ -82,6 +84,8 @@ class DocumentController
     {
         abort_unless($document->owner_id === $request->user()->id, 404);
 
+        $paths = DB::transaction(function () use ($document) {
+        $document = Document::query()->lockForUpdate()->findOrFail($document->id);
         $hasSubmissions = DB::table('submissions')
             ->join('document_versions', 'document_versions.id', '=', 'submissions.document_version_id')
             ->where('document_versions.document_id', $document->id)
@@ -91,6 +95,8 @@ class DocumentController
 
         $paths = $document->images()->get()->map(fn ($image) => $image->path());
         $document->delete();
+        return $paths;
+        });
         foreach ($paths as $path) if (is_file($path)) @unlink($path);
 
         return response()->json(['deleted' => true]);

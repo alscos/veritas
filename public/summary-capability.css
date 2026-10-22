@@ -1,0 +1,1 @@
+body{font:1.1rem system-ui;line-height:1.6;margin:1rem;color:#172b35;background:#f6f5ef}main{max-width:48rem;margin:auto}button,input,select{font:inherit;padding:.5rem;margin:.3rem;max-width:100%}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #125c9c}dd{overflow-wrap:anywhere}li{margin:1rem 0}input[readonly]{width:90%}

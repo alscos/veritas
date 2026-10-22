@@ -19,7 +19,7 @@ import type { Transaction } from "@tiptap/pm/state";
 import type { PageSettings, WritingEvent } from "./types";
 import { DEFAULT_PAGE, FONT_FAMILIES, FONT_SIZES, PAGE_GAP, pageDimensions } from "./pageLayout";
 import { PageBreak, Pagination, paginationKey } from "./Pagination";
-import { BlockLayout, SearchHighlights } from "./EditorTools";
+import { BlockLayout, SearchHighlights, NewBlockContentFont } from "./EditorTools";
 import EditorToolbar from "./EditorToolbar";
 
 export const VERITAS_EVENT_META = "veritas:event";
@@ -79,6 +79,7 @@ export type VeritasEditorHandle = {
 
 type Props = {
   initialHtml: string;
+  defaultContentFontId?: "literata" | null;
   onBlur: () => void;
   onFocus: () => void;
   onMutation: (mutation: EditorMutation) => void;
@@ -240,7 +241,7 @@ const selectionHasImportedText = (state: EditorState, from = state.selection.fro
   return from !== to && state.doc.rangeHasMark(from, to, provenance);
 };
 
-export const createVeritasExtensions = (options?: { page?: PageSettings; onPageCount?: (count: number) => void }) => [
+export const createVeritasExtensions = (options?: { defaultContentFontId?: "literata" | null; page?: PageSettings; onPageCount?: (count: number) => void }) => [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
     code: false,
@@ -252,6 +253,7 @@ export const createVeritasExtensions = (options?: { page?: PageSettings; onPageC
   Provenance,
   Typography,
   BlockLayout,
+  NewBlockContentFont.configure({ font: options?.defaultContentFontId ?? null }),
   TextAlign.configure({ types: ["heading", "paragraph"], defaultAlignment: null }),
   Subscript,
   Superscript,
@@ -313,7 +315,7 @@ export const createVeritasEditorProps = (options?: { onImageFiles: (files: File[
   return props;
 };
 
-const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEditor({ initialHtml, onBlur, onFocus, onMutation, title, page, onPageChange, beforeExport, onUploadImage }, ref) {
+const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEditor({ initialHtml, defaultContentFontId, onBlur, onFocus, onMutation, title, page, onPageChange, beforeExport, onUploadImage }, ref) {
   const locale = useLocale();
   const [, renderToolbar] = useState(0);
   const [pageCount, setPageCount] = useState(1);
@@ -329,7 +331,7 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
   const uploadFilesRef = useRef<(files: File[], position: number) => void>(() => undefined);
   // Keep editor options stable while React updates metrics, toolbar or language.
   // The mutable draft belongs to ProseMirror; content is only its initial seed.
-  const extensions = useMemo(() => createVeritasExtensions({ page: initialPage.current, onPageCount: setPageCount }), []);
+  const extensions = useMemo(() => createVeritasExtensions({ defaultContentFontId, page: initialPage.current, onPageCount: setPageCount }), []);
   const editorProps = useMemo(() => createVeritasEditorProps({ onImageFiles: (files, position) => uploadFilesRef.current(files, position) }), []);
   const editor = useEditor({
     content: initialContent.current,
@@ -406,7 +408,7 @@ const VeritasEditor = forwardRef<VeritasEditorHandle, Props>(function VeritasEdi
   const scale = zoom || Math.min(1, availableWidth / dimensions.widthPx);
   const height = pageCount * (dimensions.heightPx + PAGE_GAP) - PAGE_GAP;
   return <>
-    <EditorToolbar editor={editor} title={title} page={page} onPageChange={onPageChange} onImage={() => fileInput.current?.click()} beforeExport={beforeExport} busy={busy} zoom={zoom} onZoom={setZoom} onError={setMessage}/>
+    <EditorToolbar defaultContentFontId={defaultContentFontId} editor={editor} title={title} page={page} onPageChange={onPageChange} onImage={() => fileInput.current?.click()} beforeExport={beforeExport} busy={busy} zoom={zoom} onZoom={setZoom} onError={setMessage}/>
     <input type="file" ref={fileInput} className="visually-hidden" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={event => { const files = Array.from(event.target.files ?? []); if (files.length) uploadFiles(files, editor.state.selection.from); event.target.value = ""; }}/>
     {(message || busy) && <div className={`editor-message${message ? " error" : ""}`} role={message ? "alert" : "status"}>{message || t("Guardando imagen… puedes seguir escribiendo.")}</div>}
     <div className="page-viewport" ref={viewport}>

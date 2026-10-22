@@ -10,7 +10,7 @@ $fail = static function (string $reason): never {
     fwrite(STDERR, 'Paquete rechazado: '.$reason.PHP_EOL);
     exit(1);
 };
-foreach (['inkgroove/artisan', 'inkgroove/vendor/autoload.php', 'inkgroove/deploy/siteground/env.example', 'public_html/index.php', 'public_html/.htaccess', 'public_html/build/manifest.json', 'public_html/build/OFL.txt', 'BUILD-INFO.json', 'INSTALL-SITEGROUND.md'] as $file) {
+foreach (['inkgroove/artisan', 'inkgroove/vendor/autoload.php', 'inkgroove/deploy/siteground/env.example', 'public_html/index.php', 'public_html/.htaccess', 'public_html/certificate-public.css', 'public_html/PDF-EXPORT-LICENSES.txt', 'public_html/build/manifest.json', 'public_html/build/OFL.txt', 'BUILD-INFO.json', 'INSTALL-SITEGROUND.md'] as $file) {
     if (!is_file($root.'/'.$file)) $fail('falta '.$file);
 }
 foreach (['es/inkgroove.php', 'es/validation.php', 'en/inkgroove.php'] as $file) {
@@ -24,7 +24,7 @@ foreach ($iterator as $file) {
     if ($file->isLink()) $fail('enlace simbólico: '.$relative);
     if (preg_match('~(^|/)(\.env(?:\..*)?|\.git|node_modules)(/|$)|\.(sqlite(?:-.*)?|sql|log)$~', $relative)) $fail('archivo privado o de desarrollo: '.$relative);
     if (in_array($relative, ['inkgroove/bootstrap/cache/config.php', 'inkgroove/vendor/bin/phpunit'], true) || str_starts_with($relative, 'inkgroove/bootstrap/cache/routes-')) $fail('caché local o dependencias de pruebas: '.$relative);
-    if (str_starts_with($relative, 'public_html/') && !str_starts_with($relative, 'public_html/build/') && !in_array($relative, ['public_html/index.php', 'public_html/.htaccess', 'public_html/favicon.svg'], true)) $fail('archivo inesperado en la carpeta pública: '.$relative);
+    if (str_starts_with($relative, 'public_html/') && !str_starts_with($relative, 'public_html/build/') && !in_array($relative, ['public_html/index.php', 'public_html/.htaccess', 'public_html/favicon.svg', 'public_html/certificate-public.css', 'public_html/PDF-EXPORT-LICENSES.txt'], true)) $fail('archivo inesperado en la carpeta pública: '.$relative);
     $files[$relative] = hash_file('sha256', $file->getPathname());
 }
 $installed = json_decode(file_get_contents($root.'/inkgroove/vendor/composer/installed.json'), true, flags: JSON_THROW_ON_ERROR);

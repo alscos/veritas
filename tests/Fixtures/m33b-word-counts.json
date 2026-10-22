@@ -1,0 +1,46 @@
+[
+  {
+    "id": "0",
+    "html": ""
+  },
+  {
+    "id": "1",
+    "html": "<p></p><p><br></p>"
+  },
+  {
+    "id": "2",
+    "html": "<p>á ñ génesis génesis 123 l’année don't a_b x-y</p>"
+  },
+  {
+    "id": "3",
+    "html": "<p>uno&nbsp;dos&#160;tres</p>"
+  },
+  {
+    "id": "4",
+    "html": "<p>di<mark data-origin=\"paste\">rec</mark>to</p>"
+  },
+  {
+    "id": "5",
+    "html": "<p><mark data-origin=\"paste\">pe<mark data-origin=\"paste-edited\">ga</mark>do</mark></p>"
+  },
+  {
+    "id": "6",
+    "html": "<p><mark data-origin=\"paste-edited\">re<mark data-origin=\"paste\">he</mark>cho</mark></p>"
+  },
+  {
+    "id": "7",
+    "html": "<p><span data-provenance=\"paste-edited\">span directo</span> <mark data-origin=\"paste\">puro pegado</mark> <mark data-origin=\"paste-edited\">nuevo</mark></p>"
+  },
+  {
+    "id": "8",
+    "html": "<h1>Título</h1><blockquote><p>uno</p><p></p></blockquote><ul><li>dos</li><li>tres<br>cuatro</li></ul>"
+  },
+  {
+    "id": "9",
+    "html": "<table><tbody><tr><th>uno</th><td><mark data-origin=\"paste\">dos</mark></td></tr></tbody></table>"
+  },
+  {
+    "id": "10",
+    "html": "<p>🙂 𐐀 é !!! cero​fin</p>"
+  }
+]

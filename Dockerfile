@@ -16,6 +16,7 @@ FROM node:22-bookworm-slim AS frontend
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json vite.config.ts index.html ./
 COPY resources ./resources
+COPY tests/Fixtures/m33b-word-counts.json ./tests/Fixtures/m33b-word-counts.json
 RUN npm ci && npm run build
 
 FROM php:8.3-apache-bookworm AS runtime

@@ -23,6 +23,7 @@ export type DocumentVersion = {
 };
 
 export type VeritasDocument = {
+  default_content_font_id?: "literata" | null;
   revision?: number;
   id: string;
   owner_id: number;
@@ -56,12 +57,17 @@ export type WritingEvent = {
   server_received_at?: string;
 };
 
+export type SubmissionIdentity = { id: number | null; kind: "name" | "email" | "account" | "restricted" | "unavailable"; value: string | null };
+
 export type Submission = {
+  creator_account?: SubmissionIdentity;
+  sender_account?: SubmissionIdentity;
   id: string;
   document_version_id: string;
   sender_id: number;
   recipient_user_id?: number | null;
   recipient_email?: string | null;
+  assignment_id?: string | null;
   note?: string | null;
   status: string;
   submitted_at: string;
