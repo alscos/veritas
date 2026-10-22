@@ -71,6 +71,8 @@ fi
 cp "$ROOT/deploy/siteground/index.php" "$PUBLIC/index.php"
 cp "$ROOT/public/.htaccess" "$PUBLIC/.htaccess"
 cp "$ROOT/public/favicon.svg" "$PUBLIC/favicon.svg"
+cp "$ROOT/public/certificate-public.css" "$PUBLIC/certificate-public.css"
+cp "$ROOT/public/PDF-EXPORT-LICENSES.txt" "$PUBLIC/PDF-EXPORT-LICENSES.txt"
 cp -R "$ROOT/public/build" "$PUBLIC/build"
 cp "$ROOT/resources/fonts/OFL.txt" "$PUBLIC/build/OFL.txt"
 cp "$ROOT/docs/SITEGROUND.md" "$STAGE/INSTALL-SITEGROUND.md"
