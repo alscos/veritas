@@ -81,7 +81,7 @@ final class UpdateSupport
         if ($profile === 'siteground') {
             return str_starts_with($path, 'inkgroove/')
                 || str_starts_with($path, 'public_html/build/')
-                || in_array($path, ['public_html/index.php', 'public_html/.htaccess', 'public_html/favicon.svg', 'BUILD-INFO.json', 'FILES.sha256', 'INSTALL-SITEGROUND.md'], true);
+                || in_array($path, ['public_html/index.php', 'public_html/.htaccess', 'public_html/favicon.svg', 'public_html/certificate-public.css', 'public_html/PDF-EXPORT-LICENSES.txt', 'BUILD-INFO.json', 'FILES.sha256', 'INSTALL-SITEGROUND.md'], true);
         }
         return $profile === 'alpine' && !str_starts_with($path, 'vendor/') && !str_starts_with($path, 'public/build/');
     }
