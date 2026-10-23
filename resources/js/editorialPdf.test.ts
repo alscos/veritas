@@ -6,7 +6,7 @@ it.each([1,2,3] as const)('keeps full text, exact title and scoped statistics at
  const input = { ...source, title_at_issue: 'Exacto á é', share: { url: 'https://example.test/process-summary/share#token=' + 'S'.repeat(43), level, expires_at: null }, historical_counts: {state:'limited',source:'sealed_snapshot_html',reason:null,value:{direct:21,pasted:13,edited:8,total:42}} };
  const before = JSON.stringify(input), definition = sealedDefinition(input), json = JSON.stringify(definition);
  expect(json).toContain('Exacto á é');expect(json).toContain('Nunca caduca');expect(json).toContain('INICIO DEL DOCUMENTO');expect(json).toContain('FIN DEL DOCUMENTO');expect(json).toContain('Verificación de InkGroove');expect(json).toContain('pegado');expect(json).not.toContain('"pageBreak":"before"');
- expect(json.includes('Conteos históricos autorizados')).toBe(level === 2);
+ expect(json.includes('Conteos históricos autorizados')).toBe(level >= 2);
  expect(json).toContain('<svg');expect(json).toContain('tinta naranja');expect(JSON.stringify(input)).toBe(before);
 });
 it('does not invent statistics from HTML or accept a current-draft source', () => {

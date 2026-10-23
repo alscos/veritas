@@ -7,7 +7,7 @@ body { margin: 0; }
 .version-share-app input[readonly] { width: 100%; }
 .version-share-app button { margin: 6px; padding: 10px; cursor: pointer; }
 .version-share-app button:disabled { cursor: default; }
-.version-share-app section, .version-share-app li { padding: 16px; margin: 12px 0; border: 1px solid #b4c1b5; background: white; overflow-wrap: anywhere; }
+.version-share-app > section, .version-share-app li { padding: 16px; margin: 12px 0; border: 1px solid #b4c1b5; background: white; overflow-wrap: anywhere; }
 .version-share-app ul { padding-left: 20px; }
 .sealed-reading { white-space: pre-wrap; overflow-wrap: anywhere; font-family: Georgia, serif; line-height: 1.5; }
 .sealed-reading p:empty { min-height: 1.5em; }
@@ -74,3 +74,12 @@ body { margin: 0; }
 .modal button:disabled { opacity: .6; cursor: default; }
 .modal :is(input:not([type=radio]):not([type=checkbox]), select, textarea) { color: #12352d; background: #fffefb; border: 1px solid #809386; border-radius: 4px; padding: 8px; }
 .modal [aria-invalid=true] { border-color: #9c231a; }
+
+/* Emission result only: keep the capability field clear of the action row. */
+.emission-result > input[readonly] { display: block; width: 100%; min-width: 0; margin-bottom: 1.5rem; }
+.emission-result-actions { display: flex; flex-wrap: wrap; align-items: start; gap: .75rem; }
+.emission-pdf-status { min-height: 7rem; flex: 1 1 18rem; }
+.emission-pdf-status > [role=status] { min-height: 1.5em; margin: 0 0 .5rem; }
+.emission-result-actions button { min-height: 44px; white-space: normal; }
+
+.version-share-app .authorized-version-reading button { margin: 0; }

@@ -655,3 +655,10 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .nominal-deliveries :is(button, input, select):focus-visible { outline: 2px solid #12352d; outline-offset: 3px; }
 @media (max-width: 600px) { .delivery-filters { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1080px) { .evidence-access { flex-wrap: wrap; } }
+
+/* Emission result only: keep the capability field clear of the action row. */
+.emission-result > input[readonly] { display: block; width: 100%; min-width: 0; margin-bottom: 1.5rem; }
+.emission-result-actions { display: flex; flex-wrap: wrap; align-items: start; gap: .75rem; }
+.emission-pdf-status { min-height: 7rem; flex: 1 1 18rem; }
+.emission-pdf-status > [role=status] { min-height: 1.5em; margin: 0 0 .5rem; }
+.emission-result-actions button { min-height: 44px; white-space: normal; }
