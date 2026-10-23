@@ -31,7 +31,16 @@ $installed = json_decode(file_get_contents($root.'/inkgroove/vendor/composer/ins
 if ($installed['dev'] ?? true) $fail('Composer no está instalado en modo --no-dev');
 $manifest = json_decode(file_get_contents($root.'/public_html/build/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
 $entry = $manifest['resources/js/main.tsx'] ?? null;
-if (!$entry || empty($entry['css']) || !preg_match('/app-[\w-]+\.js$/', $entry['file'])) $fail('entrada de Vite sin versionar');
+
+if (!$entry) {
+    $fail('falta resources/js/main.tsx en el manifiesto de Vite');
+}
+if (empty($entry['css'])) {
+    $fail('la entrada principal de Vite no declara CSS');
+}
+if (empty($entry['file']) || !preg_match('~^assets/app-[A-Za-z0-9_-]+\.js$~', $entry['file'])) {
+    $fail('archivo JavaScript principal no versionado: '.($entry['file'] ?? '(ausente)'));
+}
 foreach ($manifest as $asset) {
     foreach (array_merge([$asset['file']], $asset['css'] ?? [], $asset['assets'] ?? []) as $path) {
         if (!isset($files['public_html/build/'.$path])) $fail('recurso de Vite ausente: '.$path);
