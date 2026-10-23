@@ -9,7 +9,7 @@ let mounts = 0, cleanups = 0;
 function Reading() { useEffect(() => { mounts++; return () => { cleanups++; }; }, []); return <button>Timeline</button>; }
 function Fixture() {
   const [tab, setTab] = useState<EvidenceTab | null>(null);
-  return <main><section><textarea defaultValue={'á\nñ'}/><EvidenceAccess open={setTab}/></section><MobileEvidence tab={tab} setTab={setTab} activity={<Reading/>} versions={<select aria-label="Version"><option>v1</option><option>v2</option></select>}/></main>;
+  return <main><section><textarea defaultValue={'á\nñ'}/><EvidenceAccess tab={tab} open={setTab}/></section><MobileEvidence tab={tab} setTab={setTab} activity={<Reading/>} versions={<select aria-label="Version"><option>v1</option><option>v2</option></select>}/></main>;
 }
 beforeEach(() => { mounts=0; cleanups=0; setLocale('es'); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true); vi.stubGlobal('matchMedia',vi.fn(()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()})));host=document.createElement('div');document.body.append(host);root=createRoot(host); });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
@@ -33,7 +33,7 @@ it('opens either section, switches accessible tabs, traps focus and returns to t
 });
 it('supports arrow tabs, Escape, composition safety and Tab wrap; localizes EN',async()=>{
   setLocale('en'); await act(async()=>root.render(<Fixture/>));
-  const trigger=host.querySelector<HTMLButtonElement>('.evidence-access button')!;expect(trigger.textContent).toBe('Activity');await click(trigger);
+  const trigger=host.querySelector<HTMLButtonElement>('.evidence-access button')!;expect(trigger.textContent).toBe('View record');await click(trigger);
   const tab=host.querySelector<HTMLButtonElement>('[role=tab]')!;
   await act(async()=>tab.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
   expect(document.activeElement?.textContent).toBe('Versions');

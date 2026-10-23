@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { t, useLocale } from './i18n';
 
 export type EvidenceTab = 'activity' | 'versions';
-export function EvidenceAccess({ open }: { open: (tab: EvidenceTab) => void }) {
-  useLocale();
-  return <div className="evidence-access">{(['activity', 'versions'] as const).map(tab => <button key={tab} type="button" aria-haspopup="dialog" aria-controls="mobile-evidence" onClick={event => { event.currentTarget.focus({ preventScroll: true }); open(tab); }}>{t(tab === 'activity' ? 'Actividad' : 'Versiones')}</button>)}</div>;
+export function EvidenceAccess({ tab: activeTab, open }: { tab: EvidenceTab | null; open: (tab: EvidenceTab | null) => void }) {
+  const en = useLocale() === 'en';
+  return <div className="evidence-access">{(['activity', 'versions'] as const).map(tab => <button key={tab} type="button" aria-expanded={activeTab === tab} aria-haspopup="dialog" aria-controls="mobile-evidence" onClick={event => { event.currentTarget.focus({ preventScroll: true }); open(activeTab === tab ? null : tab); }}>{tab === 'activity' ? (activeTab === 'activity' ? (en ? 'Hide record' : 'Ocultar registro') : (en ? 'View record' : 'Ver registro')) : t('Versiones')}</button>)}</div>;
 }
 
 // The same mounted children serve both layouts; CSS alone hides the inactive tab.

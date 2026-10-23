@@ -290,3 +290,18 @@ it('post-seal dialog focuses sharing, supports Escape and restores the trigger',
  expect(dismiss).toHaveBeenCalledOnce();
  await act(async()=>root.render(null));expect(document.activeElement).toBe(trigger);trigger.remove();
 });
+
+it('styles the inbox controls while keeping native keyboard buttons, labels and synchronized directions', async () => {
+ vi.stubGlobal('fetch',vi.fn(async()=>json({items:[item()],next_cursor:null})));
+ await act(async()=>root.render(<NominalDeliveries/>));
+ const nav=node.querySelector('.delivery-navigation')!;
+ expect(nav.getAttribute('aria-label')).toBe('Bandejas');
+ expect(nav.querySelector('[aria-pressed=true]')?.textContent).toBe('Recibidas');
+ expect(node.querySelectorAll('.delivery-filters label')).toHaveLength(2);
+ await click('Enviadas'); expect(location.pathname).toBe('/deliveries/sent');
+ expect(nav.querySelector('[aria-pressed=true]')?.textContent).toBe('Enviadas');
+ await change(node.querySelector('input')!, 'no match'); expect(node.querySelectorAll('.delivery-inbox li')).toHaveLength(0);
+ await change(node.querySelector('input')!, ''); await change(node.querySelector('select')!, 'revoked');
+ expect(node.querySelectorAll('.delivery-inbox li')).toHaveLength(0);
+ await change(node.querySelector('select')!, 'active'); expect(node.querySelectorAll('.delivery-inbox li')).toHaveLength(1);
+});

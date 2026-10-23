@@ -635,3 +635,23 @@ mark[data-origin="paste-edited"], .replay-paper mark[data-origin="paste-edited"]
 .modal button:disabled { opacity: .6; cursor: default; }
 .modal :is(input:not([type=radio]):not([type=checkbox]), select, textarea) { color: #12352d; background: #fffefb; border: 1px solid #809386; border-radius: 4px; padding: 8px; }
 .modal [aria-invalid=true] { border-color: #9c231a; }
+
+/* M3.4J: reserve the narrow column exclusively for the seal. */
+.certificate-card > .seal { grid-column: 1; grid-row: 1; }
+.certificate-card > .certificate-heading { grid-column: 2; grid-row: 1; }
+.certificate-card > :not(.seal):not(.certificate-heading) { grid-column: 1 / -1; }
+.certificate-card .certificate-description { overflow-wrap: normal; word-break: normal; line-height: 1.5; }
+.certificate-card .certificate-sent, .certificate-card .certificate-sent:visited { color: var(--green); font: inherit; font-size: .875rem; font-weight: 700; text-decoration: underline; text-underline-offset: .2em; min-height: 44px; display: flex; align-items: center; justify-self: start; }
+.certificate-card .certificate-sent:hover { color: #12352d; text-decoration-thickness: 2px; }
+.certificate-card .certificate-sent:focus-visible { color: #12352d; outline: 2px solid #12352d; outline-offset: 3px; border-radius: 3px; }
+.nominal-deliveries .delivery-navigation { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.nominal-deliveries button { min-height: 44px; border: 1px solid var(--green); border-radius: 8px; background: var(--paper, #fffefb); color: var(--green); padding: .65rem 1rem; font: inherit; font-weight: 650; cursor: pointer; }
+.nominal-deliveries button:hover { background: var(--mint); }
+.nominal-deliveries button[aria-pressed=true] { color: #fffefb; background: #12352d; box-shadow: inset 0 -3px #ff6b42; }
+.nominal-deliveries button:disabled { opacity: .6; cursor: default; }
+.delivery-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, .35fr); gap: 1rem; margin-block: 1.5rem; }
+.delivery-filters label { display: flex; flex-direction: column; gap: .5rem; min-width: 0; font-size: .875rem; font-weight: 650; color: var(--green); }
+.delivery-filters input, .delivery-filters select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; border: 1px solid #809386; border-radius: 8px; padding: .65rem .75rem; font: inherit; color: #12352d; background: #fffefb; }
+.nominal-deliveries :is(button, input, select):focus-visible { outline: 2px solid #12352d; outline-offset: 3px; }
+@media (max-width: 600px) { .delivery-filters { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1080px) { .evidence-access { flex-wrap: wrap; } }
