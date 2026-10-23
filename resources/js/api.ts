@@ -37,6 +37,8 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, options: RequestInit, allowCsrfRetry: boolean): Promise<T> {
   const epoch = generation;
+  // Login can be embedded in an issued-PDF flow whose in-memory capability must survive failed credentials.
+  const authenticating = path === "/auth/login" || path === "/auth/register";
   const expectedUser = identity;
   const response = await fetch(`/api${path}`, {
     credentials: "same-origin",
@@ -63,12 +65,12 @@ async function request<T>(path: string, options: RequestInit, allowCsrfRetry: bo
   }
   if (response.status === 419) {
     const message = t("Tu sesión ha caducado. Vuelve a identificarte para continuar.");
-    notifySessionExpired(message);
+    if (!authenticating) notifySessionExpired(message);
     throw new ApiError(message, 419);
   }
   if (response.status === 401) {
     const message = t("Debes volver a identificarte para continuar.");
-    if (path !== "/me") notifySessionExpired(message);
+    if (path !== "/me" && !authenticating) notifySessionExpired(message);
     throw new ApiError(message, 401);
   }
   const contentType = response.headers.get("content-type") ?? "";

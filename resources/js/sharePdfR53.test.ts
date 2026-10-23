@@ -77,3 +77,20 @@ it('terminates if posting to Worker fails without exposing the raw exception', a
  await expect(sharePdf(source, false, new AbortController().signal)).rejects.toMatchObject({ code: 'worker', message: 'worker' });
  expect(FakeWorker.current.terminate).toHaveBeenCalledOnce();
 });
+
+it.each([2,3] as const)('level %s inherits the same sealed counts and limited coverage in the owner PDF', level => {
+ const counts = {state:'limited',source:'sealed_snapshot_html',reason:'historical_session_set_not_proven',value:{direct:2,pasted:3,edited:1,total:6}};
+ const before=JSON.stringify(source);
+ const definition=sealedDefinition({...source,historical_counts:counts,share:{url:'https://example.test/process-summary/share#token='+'A'.repeat(43),level,expires_at:null}});
+ const text=JSON.stringify(definition.content);
+ expect(text).toContain('Conteos históricos autorizados');expect(text).toContain('Cobertura limitada');
+ expect(text).toContain('"text":"6"');expect(text).toContain('génesis');expect(JSON.stringify(source)).toBe(before);
+ const other=sealedDefinition({...source,historical_counts:counts,share:{url:'https://example.test/process-summary/share#token='+'A'.repeat(43),level:level===2?3:2,expires_at:null}});
+ const panel=(d:ReturnType<typeof sealedDefinition>)=>(d.content as unknown[]).find(x=>JSON.stringify(x).includes('Conteos históricos autorizados'));
+ expect(panel(definition)).toEqual(panel(other));
+});
+it.each([2,3] as const)('level %s leaves unavailable counts unavailable without inventing zeroes', level => {
+ const definition=sealedDefinition({...source,historical_counts:{state:'unavailable',source:null,reason:'signature_unverified',value:null},share:{url:'https://example.test/process-summary/share#token='+'A'.repeat(43),level,expires_at:null}});
+ const panel=(definition.content as unknown[]).find(x=>JSON.stringify(x).includes('Conteos históricos autorizados'));
+ expect(JSON.stringify(panel)).toContain('Dato no disponible');expect(JSON.stringify(panel)).not.toContain('"text":"0"');
+});

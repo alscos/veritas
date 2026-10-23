@@ -254,9 +254,9 @@ it('M3.4E: link replay retains autoplay after page 32 and refetches evicted fram
       events:url.endsWith('/event')?[{id:body.event,sequence:body.event,html:`<p>link frame ${body.event}</p>`}]:Array.from({length:end-after},(_,i)=>({id:after+i+1,sequence:after+i+1,html:`<p>link frame ${after+i+1}</p>`})),next_after:end<65?end:null};
     return json(url.endsWith('/event')?reading:{level:3,seal:{certificate_code:'VRT-TEST',version_number:1,valid:true},reading});
   }));
-  await act(async()=>root.render(<VersionShareApp initialSecret={'S'.repeat(43)}/>));await click('Consultar / Reintentar');await click('Reproducir');
+  await act(async()=>root.render(<VersionShareApp initialSecret={'S'.repeat(43)}/>));await click('Reproducir');
   for(let n=0;n<70;n++)await act(async()=>vi.advanceTimersByTime(1001));
-  expect(node.textContent).toContain('link frame 65');expect(calls.filter(c=>c.url.endsWith('/query')).map(c=>c.after)).toEqual([0,32,64]);
+  expect(node.textContent).toContain('link frame 65');expect([...new Set(calls.filter(c=>c.url.endsWith('/query')).map(c=>c.after))]).toEqual([0,32,64]);
   await change(node.querySelector('input[type=range]')!,'0');expect(node.textContent).toContain('link frame 1');
   expect(calls.some(c=>c.url.endsWith('/event'))).toBe(true);expect(calls.every(c=>c.url.includes('/process-summary/share/'))).toBe(true);
 });

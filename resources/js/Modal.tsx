@@ -3,7 +3,8 @@ import { t } from './i18n';
 
 export default function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   const titleId = useId();
-  const close = useRef(onClose); close.current = onClose;
+  const requestClose = () => { if (window.dispatchEvent(new Event('inkgroove:modal-close', { cancelable: true }))) onClose(); };
+  const close = useRef(requestClose); close.current = requestClose;
   const dialog = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const prior = document.activeElement as HTMLElement | null;
@@ -19,5 +20,5 @@ export default function Modal({ title, children, onClose }: { title: string; chi
     document.addEventListener('keydown', key);
     return () => { document.removeEventListener('keydown', key); prior?.focus(); };
   }, []);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}><button className="modal-close" onClick={onClose} aria-label={t("Cerrar")}>×</button><h2 id={titleId}>{title}</h2>{children}</section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}><button className="modal-close" onClick={requestClose} aria-label={t("Cerrar")}>×</button><h2 id={titleId}>{title}</h2>{children}</section></div>;
 }

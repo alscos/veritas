@@ -1,11 +1,10 @@
+import AuthorizedVersionReading from './AuthorizedVersionReading';
 import Modal from './Modal';
 import VersionShareApp from './VersionShareApp';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { identityGeneration, SESSION_EXPIRED_EVENT } from './api';
 import { useLocale } from './i18n';
 import { nominalBase, nominalRequest } from './nominalTransport';
-import { SubmissionReplay } from './SubmissionsView';
-import SealedReading from './SealedReading';
 import SealedPdfButton from './SealedPdfButton';
 import type { DocumentVersion, WritingEvent, Submission } from './types';
 
@@ -137,15 +136,10 @@ export default function NominalDeliveries({ academic, onAcademic }: { academic?:
     </ul>
     {cursor && <button disabled={busy} onClick={() => void load(cursor)}>{tr('Más comparticiones', 'More shares')}</button>}
     </>}
-    {chosen && version && <section key={chosen.grant_id}><button onClick={() => { clear(); setChosen(null); }}>{tr('Volver a Entregas', 'Back to Deliveries')}</button><h3>{tr('Versión sellada', 'Sealed version')} {version.version_number}</h3>
-      <p>{tr('Orden de almacenamiento dentro de la frontera sellada; sin cronología global autenticada. Formato de página no disponible en esta API; presentación reconstruida.', 'Storage order within the sealed boundary; no authenticated global chronology. Page format unavailable in this API; reconstructed presentation.')}</p>
+    {chosen && version && <section key={chosen.grant_id}><button onClick={() => { clear(); setChosen(null); }}>{tr('Volver a Entregas', 'Back to Deliveries')}</button><AuthorizedVersionReading version={version} events={events} nominalImage={readImage} nominalEvent={readEvent} historyBusy={historyBusy} totalEvents={totalEvents} coverage={coverage} onNeedMore={nextAfter === null ? undefined : loadMore}>
       <SealedPdfButton documentId={chosen.document_id} versionId={chosen.version_id} nominalGrant={chosen.grant_id} onDenied={withdrawn} />
       <p>{tr('El PDF completo puede copiarse tras descargarlo; la revocación no recupera copias.', 'The full PDF can be copied after downloading; revocation cannot recover copies.')}</p>
-      <div className="replay-paper"><SealedReading html={version.snapshot_html} read={readImage} /></div>
-      {coverage && !coverage.complete && <p role="status">{tr('Historial parcial según el contrato de este sello.', 'Partial history under this seal’s contract.')} {coverage.status}</p>}
-      {!!events.length && <SubmissionReplay version={version} events={events} nominalImage={readImage} nominalEvent={readEvent} historyBusy={historyBusy} totalEvents={totalEvents} onNeedMore={nextAfter === null ? undefined : loadMore} />}
-      {nextAfter !== null && <button disabled={historyBusy} onClick={() => void loadMore()}>{tr('Más historial sellado', 'More sealed history')}</button>}
-      {historyBusy && <p role="status">{tr('Cargando historial sellado…', 'Loading sealed history…')}</p>}
+      </AuthorizedVersionReading>
     </section>}
   </section>;
 }

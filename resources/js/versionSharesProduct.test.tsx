@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import VersionShareApp from './VersionShareApp';
 import SealedReading from './SealedReading';
+import { resetIdentity } from './api';
 import { sealedDefinition, type PdfSource } from './sealedPdf';
 let node: HTMLDivElement; let root: Root;
 const secret = 'S'.repeat(43);
@@ -32,19 +33,25 @@ it('authorizes images through callback, cleans blobs and ignores bytes arriving 
   await act(async () => root.render(<SealedReading html="<p>next</p>" read={read} />)); expect(signal.aborted).toBe(true);
   await act(async () => finish(new Blob(['late'], { type: 'image/png' }))); expect(create).toHaveBeenCalledTimes(1);
 });
-it('anonymous level3 login retry keeps secret in JSON memory, renews CSRF and never storage/query', async () => {
-  const storage = vi.spyOn(Storage.prototype, 'setItem'); let tries = 0;
-  const fetch = vi.fn(async (url: string) => { if (url === '/api/csrf-token') return response({ csrf_token: 'renewed' }); return ++tries === 1 ? response({}, 401) : tries === 2 ? response({}, 419) : response(card()); }); vi.stubGlobal('fetch', fetch);
+it('returns from inline login to the original authorized reader without storing or redirecting a secret', async () => {
+  resetIdentity(); const storage = vi.spyOn(Storage.prototype, 'setItem'); let signedIn = false, tries = 0;
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/auth/login') { signedIn = true; expect(String(init?.body)).not.toContain(secret); return new Response(JSON.stringify({user:{id:7}}),{headers:{'Content-Type':'application/json'}}); }
+    if (url === '/api/csrf-token') return response({ csrf_token: 'renewed' });
+    return !signedIn ? response({},401) : ++tries === 1 ? response({},419) : response(card());
+  }); vi.stubGlobal('fetch', fetch);
   await act(async () => root.render(<VersionShareApp initialSecret={secret} />));
-  expect(fetch).not.toHaveBeenCalled(); expect(node.textContent).toContain('primera/última respuesta');
-  await click('Consultar / Reintentar'); expect(node.querySelector('[role=alert]')!.textContent).toContain('otra pestaña');
-  const login = node.querySelector('a')!; expect(login.getAttribute('href')).toBe('/'); expect(login.target).toBe('_blank');
-  await click('Consultar / Reintentar'); expect(node.querySelector('article')!.textContent).toBe('á génesis  '); expect(node.textContent).toContain('complete=false');
+  expect(node.querySelector('.auth-shell')).toBeTruthy(); expect(node.querySelector('article')).toBeNull();
+  await act(async () => node.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(node.querySelector('.authorized-version-reading')).toBeTruthy();
+  expect(node.querySelector('article')!.textContent).toBe('á génesis  '); expect(node.textContent).toContain('Cobertura limitada');
+  expect(node.querySelector('.submission-controls')).toBeTruthy(); expect(node.querySelector('.event-rail')).toBeTruthy();
   expect(storage).not.toHaveBeenCalled(); expect(fetch.mock.calls.every(([url]) => !url.includes(secret))).toBe(true);
-  const calls = fetch.mock.calls as unknown as [string, RequestInit][];
-  const last = calls.at(-1)![1]; expect(JSON.parse(last.body as string).capability).toBe(secret); expect((last.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('renewed');
-  await click('Siguiente evento'); expect(node.querySelector('article')!.textContent).toBe('antes'); await click('Texto sellado'); expect(node.querySelector('article')!.textContent).toBe('á génesis  ');
-  expect(calls.every(([url]) => !url.includes('/events'))).toBe(true);
+  const calls = fetch.mock.calls.filter(([url]) => url.endsWith('/query'));
+  expect(calls).toHaveLength(3); const last=calls.at(-1)![1]!;
+  expect(JSON.parse(String(last.body)).capability).toBe(secret); expect((last.headers as Record<string,string>)['X-CSRF-TOKEN']).toBe('renewed');
+  expect(fetch.mock.calls.every(([url]) => !url.includes('/deliveries/') && !url.includes('/grants'))).toBe(true);
+  resetIdentity();
 });
 it('does not restore card or secret from a response after pagehide', async () => {
   let finish!: (r: unknown) => void; vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { finish = resolve; })));
@@ -76,4 +83,18 @@ it.each([1, 2, 3] as const)('renders full owner PDF and scoped QR at level %s', 
   const before = JSON.stringify(source); const definition = sealedDefinition(source); const out = JSON.stringify(definition);
   expect(out).toContain(`"qr":"${source.share!.url}"`); expect(out).toContain('SELLADA'); expect(out).toContain('génesis'); expect(out).toContain('Nivel '+level); expect(out).toContain('no verifica los bytes'); expect(JSON.stringify(source)).toBe(before);
   expect(() => sealedDefinition({ ...source, share: { ...source.share!, url: 'https://foreign.test/process-summary/share#token=' + secret } })).toThrow();
+});
+
+it.each([403,404,409])('a denied capability response %s never falls back to document or nominal APIs', async status => {
+ const fetch=vi.fn(async()=>response({},status));vi.stubGlobal('fetch',fetch);
+ await act(async()=>root.render(<VersionShareApp initialSecret={secret}/>));
+ expect(node.querySelector('.authorized-version-reading')).toBeNull();expect(node.querySelector('article')).toBeNull();
+ expect(fetch.mock.calls).toHaveLength(1);expect(node.querySelector('[role=alert]')).toBeTruthy();
+});
+it('removes a visible capability reading on a denied foreground authorization check', async () => {
+ let allowed=true;
+ vi.stubGlobal('fetch',vi.fn(async()=>response(allowed?card():{},allowed?200:404)));
+ await act(async()=>root.render(<VersionShareApp initialSecret={secret}/>));expect(node.querySelector('article')).toBeTruthy();
+ allowed=false;await act(async()=>window.dispatchEvent(new Event('focus')));
+ expect(node.querySelector('.authorized-version-reading')).toBeNull();expect(node.querySelector('article')).toBeNull();
 });

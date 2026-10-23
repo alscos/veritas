@@ -1,6 +1,7 @@
 import Modal from './Modal';
 import { createRoot } from 'react-dom/client';
 import VersionShareApp from './VersionShareApp';
+import '../css/app.css';
 import '../css/version-share.css';
 // Strip the fragment synchronously, before React, fetch, listeners or any canje.
 const fragment = window.location.hash;
