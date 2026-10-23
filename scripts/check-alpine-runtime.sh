@@ -71,7 +71,7 @@ docker exec "$container" php artisan up
 http_status / 200
 assets=$(docker exec --user www-data "$container" php -r '
 $manifest = json_decode(file_get_contents("public/build/manifest.json"), true, flags: JSON_THROW_ON_ERROR);
-if (empty($manifest["resources/js/main.tsx"]["css"])) throw new RuntimeException("Missing Vite entry");
+if (empty($manifest["resources/js/main.tsx"]["file"])) throw new RuntimeException("Missing Vite entry");
 $paths = [];
 foreach ($manifest as $entry) {
     foreach (array_merge([$entry["file"]], $entry["css"] ?? [], $entry["assets"] ?? []) as $path) $paths[$path] = true;
