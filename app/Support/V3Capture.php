@@ -54,7 +54,8 @@ final class V3Capture
                 'document_id' => $d->id, 'version' => $number, 'content_hash' => $manifest->snapshot_hash, 'process_hash' => $process,
                 'sealed_at' => $at->toIso8601String(), 'page_settings' => $d->page_settings, 'images' => $images,
                 'evidence_schema' => EvidenceCanon::SCHEMA, 'evidence_digest' => hash('sha256', $prepared['manifest'])];
-            ksort($payload); $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $payload['payload_encoding'] = CertificatePayload::ENCODING;
+            ksort($payload); $encoded = CertificatePayload::encode($payload);
             $certificate = Certificate::create(['document_version_id' => $version->id, 'certificate_code' => 'VRT-'.strtoupper(Str::random(20)),
                 'signature' => hash_hmac('sha256', $encoded, $key), 'signed_payload' => $payload, 'issued_at' => $at]);
             $budget->guard(); return [$version, $certificate];

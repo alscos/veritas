@@ -22,10 +22,7 @@ final class PublicCertificate
         $payload = $certificate->signed_payload;
         $key = config('veritas.signing_key');
         if (!is_array($payload) || !is_string($key) || $key === '') return false;
-        ksort($payload);
-        try { $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR); }
-        catch (\JsonException) { return false; }
-        return hash_equals((string) $certificate->signature, hash_hmac('sha256', $encoded, $key));
+        return CertificatePayload::matches($payload, (string) $certificate->signature, $key);
     }
 
     public static function summary(Certificate $certificate): array

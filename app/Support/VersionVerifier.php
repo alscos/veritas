@@ -94,9 +94,8 @@ final class VersionVerifier
         $key = config('veritas.signing_key');
         if (!is_string($key) || $key === '') { $this->issue('payload_signature', 'signing_key_unavailable', 'incomplete'); return; }
         ksort($p);
-        $signed = json_encode($p, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $this->budget->guard();
-        $signatureValid = hash_equals($c->signature, hash_hmac('sha256', $signed, $key));
+        $signatureValid = CertificatePayload::matches($p, $c->signature, $key);
         if (!$signatureValid) $this->issue('payload_signature', 'payload_signature_mismatch', 'mismatch');
         else $this->passed('payload_signature');
         $fields = ['version_id' => $v->id, 'document_id' => $v->document_id, 'version' => (int) $v->version_number, 'page_settings' => $v->page_settings, 'content_hash' => $v->content_hash, 'process_hash' => $v->process_hash];
@@ -107,7 +106,9 @@ final class VersionVerifier
                 continue;
             }
             $present[] = $field;
-            if ($p[$field] !== $value) $this->issue('relationship', 'signed_field_mismatch_'.$field, 'mismatch');
+            $equal = $field === 'page_settings' && is_array($p[$field]) && is_array($value)
+                ? $this->sameMaps($p[$field], $value) : $p[$field] === $value;
+            if (!$equal) $this->issue('relationship', 'signed_field_mismatch_'.$field, 'mismatch');
         }
         // sealed_at is signed as ISO8601, while the DB stores second precision.
         if (array_key_exists('sealed_at', $p)) {

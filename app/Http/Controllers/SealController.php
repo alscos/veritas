@@ -59,8 +59,9 @@ class SealController
                 'page_settings' => $document->page_settings,
                 'images' => $document->images()->get()->filter(fn ($image) => str_contains($document->content_html, $image->url()))->mapWithKeys(fn ($image) => [$image->id => $image->sha256])->all(),
             ];
+            $payload['payload_encoding'] = \App\Support\CertificatePayload::ENCODING;
             ksort($payload);
-            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $encoded = \App\Support\CertificatePayload::encode($payload);
             $certificate = Certificate::create([
                 'document_version_id' => $version->id,
                 'certificate_code' => 'VRT-'.strtoupper(Str::random(20)),

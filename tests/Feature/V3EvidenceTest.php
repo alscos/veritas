@@ -38,8 +38,23 @@ class V3EvidenceTest extends TestCase
     private function verify(DocumentVersion $v): array { return (new VersionVerifier)->verify($v->id); }
     private function resign(DocumentVersion $v, callable $fn): void
     {
-        $c=$v->certificate; $p=$fn($c->signed_payload);ksort($p);$c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'))]);$v->unsetRelation('certificate');
+        $c=$v->certificate; $p=$fn($c->signed_payload);ksort($p);$c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',(isset($p['payload_encoding']) ? \App\Support\CertificatePayload::encode($p) : json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),config('veritas.signing_key'))]);$v->unsetRelation('certificate');
     }
+    public function test_historical_v3_signature_reconstruction_keeps_original_manifest_checks(): void
+    {
+        [,,,$v]=$this->fixture(true,false);$c=$v->certificate;
+        $p=$c->signed_payload;unset($p['payload_encoding']);ksort($p);ksort($p['history_boundary']);
+        $signature=hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'));
+        foreach ($p['history_boundary'] as &$head) ksort($head);
+        unset($head);$c->update(['signed_payload'=>$p,'signature'=>$signature]);
+        $this->assertSame('verified',$this->verify($v)['status']);
+        $this->assertTrue(\App\Support\PublicCertificate::valid($c->fresh()));
+        $v->unsetRelation('certificate');$this->assertNotNull(\App\Support\VersionAccess::boundary($v));
+        DB::table('version_evidence')->where('document_version_id',$v->id)->update(['manifest_bytes'=>'{}']);
+        $this->assertContains('evidence_digest_mismatch',$this->verify($v)['reason_codes']);
+        $v->unsetRelation('certificate');$this->assertNull(\App\Support\VersionAccess::boundary($v));
+    }
+
     public function test_complete_original_cut_includes_retired_image_and_excludes_future_data_read_only(): void
     {
         [$a,,$d,$v,$sids,$images,$path]=$this->fixture();
