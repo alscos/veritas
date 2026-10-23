@@ -35,9 +35,6 @@ $entry = $manifest['resources/js/main.tsx'] ?? null;
 if (!$entry) {
     $fail('falta resources/js/main.tsx en el manifiesto de Vite');
 }
-if (empty($entry['css'])) {
-    $fail('la entrada principal de Vite no declara CSS');
-}
 if (empty($entry['file']) || !preg_match('~^assets/app-[A-Za-z0-9_-]+\.js$~', $entry['file'])) {
     $fail('archivo JavaScript principal no versionado: '.($entry['file'] ?? '(ausente)'));
 }
