@@ -76,7 +76,7 @@ final class HistoricalVersionSummaryTest extends TestCase
         $id=$this->postJson('/api/documents/'.$d->id.'/seal')->assertCreated()->json('version.id');
         $r=$this->summary($a,$d,$id);self::assertSame('limited',$r['counts']['state']);self::assertFalse($r['verification']['complete']);
         $c=DocumentVersion::findOrFail($id)->certificate;$p=$c->signed_payload;unset($p['history_boundary']);ksort($p);
-        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'))]);
+        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',(isset($p['payload_encoding']) ? \App\Support\CertificatePayload::encode($p) : json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),config('veritas.signing_key'))]);
         self::assertNull($this->summary($a,$d,$id)['counts']['value']);
         $d->update(['content_html'=>str_repeat('a',250001)]);
         $large=$this->postJson('/api/documents/'.$d->id.'/seal')->assertCreated()->json('version.id');

@@ -49,6 +49,29 @@ jobs:
       - name: Check native composition and bilingual editor
         run: npm run test:browser
       - run: php vendor/bin/phpunit
+      - name: Prepare disposable certificate JSON database
+        env:
+          CI_MYSQL_ROOT_PASSWORD: ci-only-password
+        run: |
+          php <<'PHP'
+          <?php
+          $db = new PDO('mysql:host=127.0.0.1;port=3306', 'root', getenv('CI_MYSQL_ROOT_PASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $version = $db->getAttribute(PDO::ATTR_SERVER_VERSION);
+          if (!preg_match('/^8\.4\./', $version)) throw new RuntimeException('MySQL 8.4 required');
+          $password = bin2hex(random_bytes(32));
+          echo "::add-mask::$password\n";
+          $db->exec('CREATE DATABASE m34i_synthetic');
+          $db->exec("CREATE USER 'm34i_runner'@'%' IDENTIFIED BY ".$db->quote($password));
+          $db->exec("GRANT CREATE TEMPORARY TABLES ON m34i_synthetic.* TO 'm34i_runner'@'%'");
+          file_put_contents(getenv('GITHUB_ENV'), "M34I_MYSQL_PASSWORD=$password\n", FILE_APPEND);
+          PHP
+      - name: Require certificate signatures after MySQL 8.4 JSON round-trip
+        env:
+          M34I_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=m34i_synthetic
+          M34I_MYSQL_USER: m34i_runner
+          M34I_MYSQL_REQUIRE_84: '1'
+        # No skip conversion or continue-on-error: exit 77 must fail validate too.
+        run: php tests/integration/certificate-json-roundtrip.php
       - run: python3 -m unittest discover -s tests/deployment -v
       - name: Verify migrations and empty documents on real MySQL
         env:

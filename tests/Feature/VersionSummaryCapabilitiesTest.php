@@ -88,7 +88,7 @@ final class VersionSummaryCapabilitiesTest extends TestCase
         $version->update(['snapshot_html'=>'<p>TAMPER</p>']);self::assertNull($s->redeem($g['secret'])['counts']['value']);
         $version->update(['snapshot_html'=>$html]);config(['veritas.verification.rows'=>0]);self::assertNull($s->redeem($g['secret'])['counts']['value']);
         config(['veritas.verification.rows'=>100000]);
-        $c=$version->certificate;$p=$c->signed_payload;unset($p['history_boundary']);ksort($p);$c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'))]);
+        $c=$version->certificate;$p=$c->signed_payload;unset($p['history_boundary']);ksort($p);$c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',(isset($p['payload_encoding']) ? \App\Support\CertificatePayload::encode($p) : json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),config('veritas.signing_key'))]);
         self::assertNull($s->redeem($g['secret'])['counts']['value']);
         $this->denied(fn()=>$s->issue($a,$d->id,$v),409);
         $raw=(new HistoricalVersionSummary)->summarize($a,$d->id,$v);$raw['PRIVATE']='secret';$dto=S::project($raw);

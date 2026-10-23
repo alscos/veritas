@@ -37,8 +37,7 @@ class VersionAccess
         $payload = $certificate->signed_payload;
         if (!is_array($payload)) return null;
         ksort($payload);
-        $signature = hash_hmac('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), $key);
-        if (!hash_equals($certificate->signature, $signature) || !in_array($payload['format_version'] ?? null, [2, 3], true) || ($payload['version_id'] ?? null) !== $version->id || ($payload['document_id'] ?? null) !== $version->document_id || !is_array($payload['history_boundary'] ?? null)) return null;
+        if (!CertificatePayload::matches($payload, $certificate->signature, $key) || !in_array($payload['format_version'] ?? null, [2, 3], true) || ($payload['version_id'] ?? null) !== $version->id || ($payload['document_id'] ?? null) !== $version->document_id || !is_array($payload['history_boundary'] ?? null)) return null;
         if (($payload['format_version'] ?? null) === 3) {
             $length = DB::connection()->getDriverName() === 'sqlite' ? 'length(CAST(manifest_bytes AS BLOB))' : 'OCTET_LENGTH(manifest_bytes)';
             $size = DB::table('version_evidence')->where('document_version_id', $version->id)->selectRaw($length.' AS bytes')->first();

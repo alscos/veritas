@@ -35,7 +35,7 @@ final class SealedVersionReaderTest extends TestCase
     }
     private function resign(string $version, callable $change): void {
         $c=DocumentVersion::findOrFail($version)->certificate;$p=$change($c->signed_payload);ksort($p);
-        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'))]);
+        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',(isset($p['payload_encoding']) ? \App\Support\CertificatePayload::encode($p) : json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),config('veritas.signing_key'))]);
     }
     public function test_all_session_prefixes_pagination_literal_html_and_no_writes(): void {
         [$a,$b,$d,$other,$v,$sessions,$html]=$this->fixture(18);$s=new SealedVersionReader;

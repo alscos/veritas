@@ -29,8 +29,36 @@ class VersionVerifierTest extends TestCase
     private function resign(DocumentVersion $v, callable $change): void
     {
         $c = $v->certificate()->firstOrFail(); $p = $change($c->signed_payload); ksort($p);
-        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),(string)config('veritas.signing_key'))]);
+        $c->update(['signed_payload'=>$p,'signature'=>hash_hmac('sha256',(isset($p['payload_encoding']) ? \App\Support\CertificatePayload::encode($p) : json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),(string)config('veritas.signing_key'))]);
     }
+    public function test_historical_v2_reordered_boundary_is_verified_by_all_readers(): void
+    {
+        [,,,$v] = $this->fixture();
+        $c = $v->certificate;
+        $p = $c->signed_payload;
+        unset($p['payload_encoding']); // Exact pre-M3.4I emitter, not a new signature profile.
+        foreach ($p['history_boundary'] as &$head) {
+            $head = ['sequence'=>$head['sequence'], 'event_id'=>$head['event_id'], 'hash'=>$head['hash']];
+        }
+        unset($head);
+        ksort($p['history_boundary']); ksort($p);
+        $signature = hash_hmac('sha256', json_encode($p, JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR), config('veritas.signing_key'));
+        // Synthetic loss of object insertion order; this is NOT a MySQL execution.
+        foreach ($p['history_boundary'] as &$head) ksort($head);
+        unset($head);
+        $c->update(['signed_payload'=>$p, 'signature'=>$signature]);
+        $this->assertSame('limited', $this->verify($v)['status']);
+        $this->assertTrue(\App\Support\PublicCertificate::valid($c->fresh()));
+        $v->unsetRelation('certificate');
+        $this->assertNotNull(\App\Support\VersionAccess::boundary($v));
+        $p['history_boundary'][array_key_first($p['history_boundary'])]['sequence']++;
+        $c->update(['signed_payload'=>$p]);
+        $this->assertContains('payload_signature_mismatch', $this->verify($v)['reason_codes']);
+        $this->assertFalse(\App\Support\PublicCertificate::valid($c->fresh()));
+        $v->unsetRelation('certificate');
+        $this->assertNull(\App\Support\VersionAccess::boundary($v));
+    }
+
     public function test_v2_is_limited_read_only_and_ignores_later_sessions_events_and_draft(): void
     {
         [$a,$b,$doc,$v,$sid,$path] = $this->fixture();

@@ -45,6 +45,45 @@ final class UnifiedVersionShareTest extends TestCase
         catch(\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {self::assertSame($code,$e->getStatusCode());}
     }
 
+    public function test_new_v2_and_v3_share_after_nested_json_order_changes(): void
+    {
+        extract($this->fixture());
+        $this->withHeader('Origin','http://localhost');
+        $d->update(['page_settings'=>['orientation'=>'portrait','format'=>'a4','margin'=>20]]);
+        $reorder = function (array $p) use (&$reorder): array {
+            foreach ($p as &$value) if (is_array($value)) $value=$reorder($value);
+            unset($value); krsort($p,SORT_STRING); return $p;
+        };
+        foreach ([2,3] as $format) {
+            config(['veritas.seal_format'=>$format]);
+            $version=$this->postJson('/api/documents/'.$d->id.'/seal')->assertCreated()->json('version.id');
+            $certificate=\App\Models\Certificate::where('document_version_id',$version)->firstOrFail();
+            self::assertSame(\App\Support\CertificatePayload::ENCODING,$certificate->signed_payload['payload_encoding']);
+            $certificate->update(['signed_payload'=>$reorder($certificate->signed_payload)]);
+            $this->postJson('/process-summary/share/manage/'.$d->id.'/'.$version.'/grants',
+                array_replace($input,['operation_key'=>(string)Str::uuid()]))->assertCreated();
+            $certificate->update(['signature'=>str_repeat('0',64)]);
+            $this->postJson('/process-summary/share/manage/'.$d->id.'/'.$version.'/grants',
+                array_replace($input,['operation_key'=>(string)Str::uuid()]))->assertStatus(409);
+        }
+    }
+
+    public function test_reconstructed_historical_v2_can_share_without_changing_certificate(): void
+    {
+        extract($this->fixture());$this->withHeader('Origin','http://localhost');
+        $c=\App\Models\Certificate::where('document_version_id',$v)->firstOrFail();
+        $p=$c->signed_payload;unset($p['payload_encoding']);ksort($p);ksort($p['history_boundary']);
+        $sig=hash_hmac('sha256',json_encode($p,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),config('veritas.signing_key'));
+        foreach ($p['history_boundary'] as &$head) ksort($head);
+        unset($head);$c->update(['signed_payload'=>$p,'signature'=>$sig]);
+        $before=$c->fresh()->getAttributes();
+        $base='/process-summary/share/manage/'.$d->id.'/'.$v.'/grants';
+        $this->postJson($base,$input)->assertCreated();
+        $this->postJson($base,$input)->assertCreated()->assertJsonPath('replayed',true);
+        $this->postJson($base,array_replace($input,['days'=>2]))->assertStatus(409);
+        self::assertSame($before,$c->fresh()->getAttributes());
+    }
+
     public function test_atomic_nominal_delivery_idempotency_and_no_legacy_shortcut(): void
     {
         extract($this->fixture());$s=new VersionShares;

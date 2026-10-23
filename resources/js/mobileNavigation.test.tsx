@@ -93,3 +93,21 @@ it('saves the unchanged draft and opens the unified wizard for the exact selecte
   expect(host.querySelector('[data-editor]')).toBe(editor);expect(editor?.innerHTML).toBe(html);
   expect(lifecycle.mounts).toBe(1);expect(lifecycle.unmounts).toBe(0);
 });
+
+it('exposes the live record disclosure and preserves the same record on close and reopen', async () => {
+  await act(async()=>root.render(<App/>)); await click('[data-archive] button');
+  const trigger=host.querySelector<HTMLButtonElement>('.evidence-access button')!;
+  expect(trigger.textContent).toBe('Ver registro'); expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  const record=host.querySelector('.live-title'); const editor=host.querySelector('[data-editor]');
+  await click('.evidence-access button');
+  expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  expect(trigger.getAttribute('aria-controls')).toBe('mobile-evidence');
+  expect(host.querySelector('[role=dialog]')).not.toBeNull();
+  await click('.evidence-mobile-heading button');
+  expect(trigger.getAttribute('aria-expanded')).toBe('false'); expect(document.activeElement).toBe(trigger);
+  await act(async()=>setLocale('en')); expect(trigger.textContent).toBe('View record');
+  await click('.evidence-access button'); expect(host.querySelector('.live-title')).toBe(record);
+  expect(host.querySelector('[data-editor]')).toBe(editor);
+  expect(host.querySelector('.certificate-description')?.textContent).toBe('Exact sealed version');
+  expect(host.querySelector('.certificate-sent')?.getAttribute('href')).toBe('/deliveries/sent');
+});
